@@ -51,6 +51,7 @@ public class OraclePatchDownloader {
 	private static String plattform = null;
 	private static String user = null;
 	private static String password = null;
+	private static boolean checkPatchList = false;
 	private static ArrayList<Pattern> patchRegexp = new ArrayList<Pattern>();
 	private static ArrayList<String> patchList = new ArrayList<String>();
 
@@ -154,12 +155,14 @@ public class OraclePatchDownloader {
 			}
 			webClient.close();
 			int exitRc = 0;
-			for (String patch : patchList) {
+			if (checkPatchList) {
+				for (String patch : patchList) {
 
-				if (isPatchDownloaded(patch))
-					continue;
-				exitRc = 1;
-				System.out.println("Patch " + patch + " missing");
+					if (isPatchDownloaded(patch))
+						continue;
+					exitRc = 1;
+					System.out.println("Patch " + patch + " missing");
+				}
 			}
 			System.exit(exitRc);
 		} catch (Exception e) {
@@ -178,22 +181,24 @@ public class OraclePatchDownloader {
 		System.out.println(" -r : --regex       regex for file filter, multiple possible");
 		System.out.println(" -u : --user        email/userid");
 		System.out.println(" -p : --password    password");
+		System.out.println(" -c : --check       check patchlist after download");
 	}
 
 	public static void main(String[] args) {
 
 		int c;
-		LongOpt[] longopts = new LongOpt[8];
+		LongOpt[] longopts = new LongOpt[9];
 		longopts[0] = new LongOpt("help", LongOpt.NO_ARGUMENT, null, 'h');
-		longopts[1] = new LongOpt("directory", LongOpt.REQUIRED_ARGUMENT, null, 'd');
-		longopts[2] = new LongOpt("patches", LongOpt.REQUIRED_ARGUMENT, null, 'x');
-		longopts[3] = new LongOpt("plattform", LongOpt.REQUIRED_ARGUMENT, null, 't');
-		longopts[4] = new LongOpt("regex", LongOpt.REQUIRED_ARGUMENT, null, 'r');
-		longopts[5] = new LongOpt("user", LongOpt.REQUIRED_ARGUMENT, null, 'u');
-		longopts[6] = new LongOpt("password", LongOpt.REQUIRED_ARGUMENT, null, 'p');
-		longopts[7] = new LongOpt("patchfile", LongOpt.REQUIRED_ARGUMENT, null, 'f');
+		longopts[1] = new LongOpt("check", LongOpt.NO_ARGUMENT, null, 'c');
+		longopts[2] = new LongOpt("directory", LongOpt.REQUIRED_ARGUMENT, null, 'd');
+		longopts[3] = new LongOpt("patches", LongOpt.REQUIRED_ARGUMENT, null, 'x');
+		longopts[4] = new LongOpt("plattform", LongOpt.REQUIRED_ARGUMENT, null, 't');
+		longopts[5] = new LongOpt("regex", LongOpt.REQUIRED_ARGUMENT, null, 'r');
+		longopts[6] = new LongOpt("user", LongOpt.REQUIRED_ARGUMENT, null, 'u');
+		longopts[7] = new LongOpt("password", LongOpt.REQUIRED_ARGUMENT, null, 'p');
+		longopts[8] = new LongOpt("patchfile", LongOpt.REQUIRED_ARGUMENT, null, 'f');
 
-		Getopt g = new Getopt("OraclePatchDownoader", args, "hd:t:x:r:u:p:f:", longopts);
+		Getopt g = new Getopt("OraclePatchDownoader", args, "hcd:t:x:r:u:p:f:", longopts);
 		directory = new File(System.getProperty("user.home"));
 
 		while ((c = g.getopt()) != -1)
@@ -239,22 +244,21 @@ public class OraclePatchDownloader {
 				if (fp.exists()) {
 					String line;
 					try {
-					BufferedReader br = new BufferedReader(new FileReader(fp));
-					while ((line = br.readLine()) != null) {
-						Matcher matcher = patchPattern.matcher(line.trim());
-						if (matcher.matches()) {
-							String px = matcher.group(2);
-							patchList.add(px);
+						BufferedReader br = new BufferedReader(new FileReader(fp));
+						while ((line = br.readLine()) != null) {
+							Matcher matcher = patchPattern.matcher(line.trim());
+							if (matcher.matches()) {
+								String px = matcher.group(2);
+								patchList.add(px);
+							}
 						}
-					}
-					br.close();
-					} catch(Exception e) {
+						br.close();
+					} catch (Exception e) {
 						e.printStackTrace();
 						System.exit(1);
-					}			
+					}
 				}
 				break;
-
 
 			case 't':
 				plattform = g.getOptarg();
