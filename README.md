@@ -16,7 +16,7 @@ cd H35_OraclePatchDownloader
 mvn install
 cd target
 ## verfiy build, you can copy the file (its complete with all dependencies)
-java -jar OraclePatchDownloader-1.0.0.jar 
+java -jar OraclePatchDownloader-1.0.1.jar 
 ```
 
 
@@ -41,6 +41,8 @@ the regex can be used to filter out the files
  -u : --user        email/userid
 
  -p : --password    password
+
+ -c : --check       check downloaded files against patchlist (-x: --patch) 
 ```
 
 ```sh
