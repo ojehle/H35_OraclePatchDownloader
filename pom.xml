@@ -4,10 +4,17 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>li.h35</groupId>
 	<artifactId>oraclePatchDownloader</artifactId>
+<<<<<<< HEAD
 	<version>1.0.1</version>
 	<properties>
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<maven.compiler.target>1.8</maven.compiler.target>
+=======
+	<version>1.0.0</version>
+	<properties>
+   	  <maven.compiler.source>1.8</maven.compiler.source>
+    	  <maven.compiler.target>1.8</maven.compiler.target>
+>>>>>>> branch 'master' of dream920:/volume1/gitserver/h35/OraclePatchDownloader.git
 	</properties>
 	<build>
 		<plugins>

@@ -17,5 +17,4 @@
     <stringAttribute key="org.eclipse.jdt.launching.MODULE_NAME" value="OraclePatchDownloader"/>
     <stringAttribute key="org.eclipse.jdt.launching.PROGRAM_ARGUMENTS" value="-u user@h35.li -p password -x 26749785 -t 226P -r  &quot;.*1900.*&quot; -r  &quot;.*19190.*&quot;"/>
     <stringAttribute key="org.eclipse.jdt.launching.PROJECT_ATTR" value="OraclePatchDownloader"/>
-    <stringAttribute key="org.eclipse.jdt.launching.SOURCE_PATH_PROVIDER" value="org.eclipse.m2e.launchconfig.sourcepathProvider"/>
 </launchConfiguration>
