@@ -44,7 +44,7 @@ the regex can be used to filter out the files
 ```
 
 ```sh
-java -jar OraclePatchDownloader-1.0.0.jar -u user@h35.li -p password -x 200000 -t 226P -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
+java -jar OraclePatchDownloader-1.0.1.jar -u user@h35.li -p password -x 200000 -t 226P -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
 ```
 
 
