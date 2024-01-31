@@ -19,12 +19,11 @@ cd target
 java -jar OraclePatchDownloader-1.0.1.jar 
 ```
 
-
 ## Usage
 
 You can use the tool to download a list of patches, it accepts multiple -x or a list of patches delimited by comma.
 the regex can be used to filter out the files
- 
+
 ```sh
  -h : --help        help text
 
@@ -43,13 +42,13 @@ the regex can be used to filter out the files
  -p : --password    password
 
  -c : --check       check downloaded files against patchlist (-x: --patch) 
+                    assumes that the downloaded patch files contain the patch number for example: p333333.zip 
+
 ```
 
 ```sh
 java -jar OraclePatchDownloader-1.0.1.jar -u user@h35.li -p password -x 200000 -t 226P -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
 ```
-
-
 
 ## Plattform Codes (-t)
 
