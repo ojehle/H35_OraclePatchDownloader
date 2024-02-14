@@ -16,7 +16,7 @@ cd H35_OraclePatchDownloader
 mvn install
 cd target
 ## verfiy build, you can copy the file (its complete with all dependencies)
-java -jar OraclePatchDownloader-1.0.1.jar 
+java -jar OraclePatchDownloader-1.0.2.jar 
 ```
 
 ## Usage
