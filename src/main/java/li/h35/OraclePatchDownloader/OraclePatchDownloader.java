@@ -48,9 +48,9 @@ public class OraclePatchDownloader {
 	private static String regex = "(?:^|\\?|&)patch_file=(.*?)(?:&|$)";
 	private static Pattern pattern = Pattern.compile(regex);
 	private static File directory = null;
-	private static String plattform = null;
 	private static String user = null;
 	private static String password = null;
+	private static ArrayList<String> plattform = new ArrayList<String>();
 	private static boolean checkPatchList = false;
 	private static ArrayList<Pattern> patchRegexp = new ArrayList<Pattern>();
 	private static ArrayList<String> patchList = new ArrayList<String>();
@@ -63,7 +63,7 @@ public class OraclePatchDownloader {
 		return "";
 	}
 
-	public String getDownloadUrl(String patch) {
+	public String getDownloadUrl(String patch, String plattform) {
 		return "https://updates.oracle.com/Orion/SimpleSearch/process_form?search_type=patch&patch_number=" + patch
 				+ "&plat_lang=" + plattform;
 	}
@@ -90,38 +90,39 @@ public class OraclePatchDownloader {
 			for (String patch : patchList) {
 				if (isPatchDownloaded(patch))
 					continue;
-
-				page = webClient.getPage(getDownloadUrl(patch));
-				if (!loggedIn) {
-					for (HtmlForm f : page.getForms()) {
-						if (f.getNameAttribute().equalsIgnoreCase("LoginForm")) {
-							HtmlForm form = page.getFormByName("LoginForm");
-							form.getInputByName("ssousername").type(user);
-							form.getInputByName("password").type(password);
-							HtmlInput in = page.getHtmlElementById("signin_button");
-							page = in.click(); // works fine
-							page = webClient.getPage(getDownloadUrl(patch));
+				for (String p : plattform) {
+					page = webClient.getPage(getDownloadUrl(patch, p));
+					if (!loggedIn) {
+						for (HtmlForm f : page.getForms()) {
+							if (f.getNameAttribute().equalsIgnoreCase("LoginForm")) {
+								HtmlForm form = page.getFormByName("LoginForm");
+								form.getInputByName("ssousername").type(user);
+								form.getInputByName("password").type(password);
+								HtmlInput in = page.getHtmlElementById("signin_button");
+								page = in.click(); // works fine
+								page = webClient.getPage(getDownloadUrl(patch, p));
+							}
 						}
 					}
-				}
 
-				for (DomElement e : page.getElementsByTagName("table")) {
-					if (e instanceof HtmlTable) {
-						for (HtmlTableRow r : ((HtmlTable) e).getRows()) {
-							for (HtmlTableCell c : r.getCells()) {
-								for (org.htmlunit.html.HtmlElement el : c.getHtmlElementDescendants()) {
-									String u = el.getAttribute("href");
-									if (u.startsWith("https") && u.contains(".zip")) {
-										if (patchRegexp.size() > 0) {
-											for (Pattern p : patchRegexp) {
-												if (p.matcher(u).matches()) {
-													downloads.add(u);
-													break;
+					for (DomElement e : page.getElementsByTagName("table")) {
+						if (e instanceof HtmlTable) {
+							for (HtmlTableRow r : ((HtmlTable) e).getRows()) {
+								for (HtmlTableCell c : r.getCells()) {
+									for (org.htmlunit.html.HtmlElement el : c.getHtmlElementDescendants()) {
+										String u = el.getAttribute("href");
+										if (u.startsWith("https") && u.contains(".zip")) {
+											if (patchRegexp.size() > 0) {
+												for (Pattern pattern : patchRegexp) {
+													if (pattern.matcher(u).matches()) {
+														downloads.add(u);
+														break;
+													}
 												}
-											}
 
-										} else {
-											downloads.add(u);
+											} else {
+												downloads.add(u);
+											}
 										}
 									}
 								}
@@ -130,7 +131,6 @@ public class OraclePatchDownloader {
 					}
 				}
 			}
-
 			for (String u : downloads) {
 				String filename = getPatchFile(u);
 				File outputFile = new File(directory, filename);
@@ -177,7 +177,8 @@ public class OraclePatchDownloader {
 		System.out.println(" -d : --directory   output folder, default user home");
 		System.out.println(" -x : --patch       comma separated list of patches or multiple possible");
 		System.out.println(" -f : --patchfile   patch list as file, one patch per line , # is ignored");
-		System.out.println(" -t : --plattform   Plattform Code 226P (Linux X86_64) ");
+		System.out.println(
+				" -t : --plattform   Plattform Code 226P (Linux X86_64) or Langauge Code 4L, comma separated  ");
 		System.out.println(" -r : --regex       regex for file filter, multiple possible");
 		System.out.println(" -u : --user        email/userid");
 		System.out.println(" -p : --password    password");
@@ -261,7 +262,13 @@ public class OraclePatchDownloader {
 				break;
 
 			case 't':
-				plattform = g.getOptarg();
+				String pa = g.getOptarg();
+				pa = pa.replace(";", ",");
+				String[] pal = pa.split(",");
+				for (String px : pal) {
+					plattform.add(px);
+				}
+
 				break;
 			case 'p':
 				password = g.getOptarg();
