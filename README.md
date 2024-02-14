@@ -33,7 +33,7 @@ the regex can be used to filter out the files
 
  -f : --patchfile   patch list as file, one patch per line , line starting with # is ignored, format p12345678, 12345678
 
- -t : --plattform   Plattform Code 226P (Linux X86_64) 
+ -t : --plattform   Plattform Code 226P (Linux X86_64) or Langauge Code 4L, comma separated  
 
  -r : --regex       regex for file filter, multiple possible
 
@@ -47,7 +47,7 @@ the regex can be used to filter out the files
 ```
 
 ```sh
-java -jar OraclePatchDownloader-1.0.1.jar -u user@h35.li -p password -x 200000 -t 226P -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
+java -jar OraclePatchDownloader-1.0.1.jar -u user@h35.li -p password -x 200000 -t 226P,4L -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
 ```
 
 ## Plattform Codes (-t)
@@ -152,3 +152,49 @@ java -jar OraclePatchDownloader-1.0.1.jar -u user@h35.li -p password -x 200000 -
 | 520P| VxWorks|
 | 280P| x86 32 bit|
 | 282P| x86 64 bit|
+| 67L| Albanian (SQ)|
+| 8L| Arabic (AR)|
+| 26L| Brazilian Portuguese (PTB)| 
+| 101L| Bulgarian (BG)|
+| 3L| Canadian French (FRC)|
+| 102L| Catalan (CA)|
+| 103L| Croatian (HR)| 
+| 66L| Cyrillic Kazakh (CKK)| 
+| 62L| Cyrillic Serbian (CSR)| 
+| 30L| Czech (CS)| 
+| 5L| Danish (DK)| 
+| 6L| Dutch (NL)| 
+| 118L| ESTONIAN (ET)| 
+| 7L| Finnish (SF)| 
+| 2L| French (F)| 
+| 4L| German (D)| 
+| 104L| Greek (EL)| 
+| 107L| Hebrew (IW)| 
+| 28L| Hungarian (HU)| 
+| 106L| Icelandic (IS)| 
+| 46L| Indonesian (IN)| 
+| 108L| Italian (I)| 
+| 15L| Japanese (JA)| 
+| 16L| Korean (KO)| 
+| 29L| Latin American Spanish (ESA)| 
+| 63L| Latin Serbian (LSR)| 
+| 119L| LATVIAN (LV)| 
+| 109L| Lithuanian (LT)| 
+| 10L| Norwegian (N)| 
+| 110L| Polish (PL)| 
+| 18L| Portuguese (PT)| 
+| 111L| Romanian (RO)| 
+| 112L| Russian (RU)| 
+| 14L| Simplified Chinese (ZHS)| 
+| 113L| Slovak (SK)| 
+| 114L| Slovenian (SL)| 
+| 11L| Spanish (E)| 
+| 13L| Swedish (S)| 
+| 115L| Thai (TH)| 
+| 117L| Traditional Chinese (ZHT)| 
+| 116L| Turkish (TR)| 
+| 37L| UK English (GB)| 
+| 39L| Ukrainian (UK)| 
+| 43L| Vietnamese (VN)| 
+| 999L| Worldwide Spanish (ESW)| 
+
