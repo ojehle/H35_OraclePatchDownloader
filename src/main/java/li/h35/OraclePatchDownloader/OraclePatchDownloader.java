@@ -81,11 +81,12 @@ public class OraclePatchDownloader {
 		ArrayList<String> downloads = new ArrayList<String>();
 		boolean loggedIn = false;
 
-		WebClient webClient = new WebClient(BrowserVersion.FIREFOX);
+		WebClient webClient = new WebClient(BrowserVersion.FIREFOX);		
 		webClient.getOptions().setJavaScriptEnabled(true);
 		Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
 		HtmlPage page = null;
 		try {
+			webClient.getOptions().setTempFileDirectory(new File(directory, "tmp"));
 
 			for (String patch : patchList) {
 				if (isPatchDownloaded(patch))
