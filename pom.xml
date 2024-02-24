@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>li.h35</groupId>
 	<artifactId>oraclePatchDownloader</artifactId>
-	<version>1.0.2</version>
+	<version>1.0.3</version>
 	<properties>
 		<maven.compiler.source>1.8</maven.compiler.source>
 		<maven.compiler.target>1.8</maven.compiler.target>

@@ -49,6 +49,7 @@ public class OraclePatchDownloader {
 	private static Pattern pattern = Pattern.compile(regex);
 	private static File directory = null;
 	private static File tempdir = null;
+	private static boolean tempdirDelete = false;
 	private static String user = null;
 	private static String password = null;
 	private static ArrayList<String> plattform = new ArrayList<String>();
@@ -82,13 +83,13 @@ public class OraclePatchDownloader {
 		ArrayList<String> downloads = new ArrayList<String>();
 		boolean loggedIn = false;
 
-		WebClient webClient = new WebClient(BrowserVersion.FIREFOX);		
-		webClient.getOptions().setJavaScriptEnabled(true);		
+		WebClient webClient = new WebClient(BrowserVersion.FIREFOX);
+		webClient.getOptions().setJavaScriptEnabled(true);
 		Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
 		HtmlPage page = null;
 		try {
 			webClient.getOptions().setTempFileDirectory(tempdir);
-			
+
 			for (String patch : patchList) {
 				if (isPatchDownloaded(patch))
 					continue;
@@ -218,8 +219,7 @@ public class OraclePatchDownloader {
 				directory = new File(g.getOptarg());
 
 				if (!directory.exists()) {
-					if (directory.getParentFile().exists())
-						directory.mkdir();
+					directory.mkdirs();
 				}
 				break;
 
@@ -282,10 +282,10 @@ public class OraclePatchDownloader {
 				user = g.getOptarg();
 				break;
 			case 'T':
-				tempdir = new File(g.getOptarg());				
+				tempdir = new File(g.getOptarg());
 				if (!tempdir.exists()) {
-					if (tempdir.getParentFile().exists())
-						tempdir.mkdir();
+					tempdir.mkdirs();
+					tempdirDelete = true;
 				}
 				break;
 
@@ -312,6 +312,14 @@ public class OraclePatchDownloader {
 		}
 
 		new OraclePatchDownloader();
+		
+		if (tempdirDelete) {
+			for (File f : tempdir.listFiles())
+			{
+				f.delete();
+			}
+			tempdir.delete();
+		}
 
 	}
 }
