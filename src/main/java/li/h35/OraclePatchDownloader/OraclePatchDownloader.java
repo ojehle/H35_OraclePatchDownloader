@@ -48,6 +48,7 @@ public class OraclePatchDownloader {
 	private static String regex = "(?:^|\\?|&)patch_file=(.*?)(?:&|$)";
 	private static Pattern pattern = Pattern.compile(regex);
 	private static File directory = null;
+	private static File tempdir = null;
 	private static String user = null;
 	private static String password = null;
 	private static ArrayList<String> plattform = new ArrayList<String>();
@@ -81,12 +82,13 @@ public class OraclePatchDownloader {
 		ArrayList<String> downloads = new ArrayList<String>();
 		boolean loggedIn = false;
 
-		WebClient webClient = new WebClient(BrowserVersion.FIREFOX);
-		webClient.getOptions().setJavaScriptEnabled(true);
+		WebClient webClient = new WebClient(BrowserVersion.FIREFOX);		
+		webClient.getOptions().setJavaScriptEnabled(true);		
 		Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
 		HtmlPage page = null;
 		try {
-
+			webClient.getOptions().setTempFileDirectory(tempdir);
+			
 			for (String patch : patchList) {
 				if (isPatchDownloaded(patch))
 					continue;
@@ -183,12 +185,13 @@ public class OraclePatchDownloader {
 		System.out.println(" -u : --user        email/userid");
 		System.out.println(" -p : --password    password");
 		System.out.println(" -c : --check       check patchlist after download");
+		System.out.println(" -T : --temp        Temporary Directory");
 	}
 
 	public static void main(String[] args) {
 
 		int c;
-		LongOpt[] longopts = new LongOpt[9];
+		LongOpt[] longopts = new LongOpt[10];
 		longopts[0] = new LongOpt("help", LongOpt.NO_ARGUMENT, null, 'h');
 		longopts[1] = new LongOpt("check", LongOpt.NO_ARGUMENT, null, 'c');
 		longopts[2] = new LongOpt("directory", LongOpt.REQUIRED_ARGUMENT, null, 'd');
@@ -198,9 +201,11 @@ public class OraclePatchDownloader {
 		longopts[6] = new LongOpt("user", LongOpt.REQUIRED_ARGUMENT, null, 'u');
 		longopts[7] = new LongOpt("password", LongOpt.REQUIRED_ARGUMENT, null, 'p');
 		longopts[8] = new LongOpt("patchfile", LongOpt.REQUIRED_ARGUMENT, null, 'f');
+		longopts[9] = new LongOpt("temp", LongOpt.REQUIRED_ARGUMENT, null, 'T');
 
-		Getopt g = new Getopt("OraclePatchDownoader", args, "hcd:t:x:r:u:p:f:", longopts);
+		Getopt g = new Getopt("OraclePatchDownoader", args, "hcd:t:x:r:u:p:f:T:", longopts);
 		directory = new File(System.getProperty("user.home"));
+		tempdir = new File(System.getProperty("java.io.tmpdir"));
 
 		while ((c = g.getopt()) != -1)
 			switch (c) {
@@ -275,6 +280,13 @@ public class OraclePatchDownloader {
 				break;
 			case 'u':
 				user = g.getOptarg();
+				break;
+			case 'T':
+				tempdir = new File(g.getOptarg());				
+				if (!tempdir.exists()) {
+					if (tempdir.getParentFile().exists())
+						tempdir.mkdir();
+				}
 				break;
 
 			default:

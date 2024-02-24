@@ -44,6 +44,8 @@ the regex can be used to filter out the files
  -c : --check       check downloaded files against patchlist (-x: --patch) 
                     assumes that the downloaded patch files contain the patch number for example: p333333.zip 
 
+ -T : --temp        Temporary directory for HtmlUnit to use while downloading
+
 ```
 
 ```sh
