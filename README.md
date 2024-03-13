@@ -1,11 +1,11 @@
 # Oracle Patch Downloader
 
-The Oracle Patch Downloader can be used to download a list of patches from oracle.
+The Oracle Patch Downloader can be used to download a list of patches from Oracle.
 
 ## Precoditions
 
-- java >= 11
-- maven >= 3.9
+- java >= 1.8
+- maven >= 3.5.4
 - Oracle Support Account
 
 ## Installation
@@ -15,38 +15,45 @@ git clone git@github.com:ojehle/H35_OraclePatchDownloader.git
 cd H35_OraclePatchDownloader
 mvn install
 cd target
-## verfiy build, you can copy the file (its complete with all dependencies)
-java -jar OraclePatchDownloader-1.0.3.jar 
+# verify build, you can copy the file (it is complete with all dependencies)
+java -jar OraclePatchDownloader-1.0.3.jar
 ```
 
 ## Usage
 
-You can use the tool to download a list of patches, it accepts multiple -x or a list of patches delimited by comma.
-the regex can be used to filter out the files
+You can use the tool to download a list of patches, the regex can
+be used to filter out files.  You can specify patch lists and
+platform/language lists either as comma-separated lists
+(`-x p12345678,6880880`) or through multiple repeated options
+(`-x p12345678 -x 6880880`) or through a combination of these.
 
 ```sh
  -h : --help        help text
 
  -d : --directory   output folder, default user home
 
- -x : --patch       comma separated list of patches or multiple possible
+ -x : --patches     list of patches
+                    (e.g. "p12345678", "12345678")
 
- -f : --patchfile   patch list as file, one patch per line , line starting with # is ignored, format p12345678, 12345678
+ -f : --patchfile   file containing list of patches, one patch per line
+                    (e.g. "p12345678", "12345678", "# comment")
 
- -t : --plattform   Plattform Code 226P (Linux X86_64) or Langauge Code 4L, comma separated  
+ -t : --platforms   list of platforms or languages
+                    (e.g. "226P" for Linux x86-64 or "4L" for German (D))
 
  -r : --regex       regex for file filter, multiple possible
+                    (e.g. ".*1900.*")
 
  -u : --user        email/userid
 
  -p : --password    password
 
- -c : --check       check downloaded files against patchlist (-x: --patch) 
-                    assumes that the downloaded patch files contain the patch number for example: p333333.zip 
+ -2 : --2fatype     second factor type (one of "None", "TOTP", "SMS")
 
- -T : --temp        Temporary directory for HtmlUnit to use while downloading
-
+ -T : --temp        temporary directory
 ```
+
+For example:
 
 ```sh
 java -jar OraclePatchDownloader-1.0.3.jar -u user@h35.li -p password -x 200000 -t 226P,4L -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
@@ -56,7 +63,7 @@ java -jar OraclePatchDownloader-1.0.3.jar -u user@h35.li -p password -x 200000 -
 
 | Code  | Plattform |
 | ----- | -------------------------------------|
-| 537P| Acme Packet 1100|  
+| 537P| Acme Packet 1100|
 | 529P| Acme Packet 3820|
 | 540P| Acme Packet 3900|
 | 561P| Acme Packet 3950|
@@ -156,47 +163,46 @@ java -jar OraclePatchDownloader-1.0.3.jar -u user@h35.li -p password -x 200000 -
 | 282P| x86 64 bit|
 | 67L| Albanian (SQ)|
 | 8L| Arabic (AR)|
-| 26L| Brazilian Portuguese (PTB)| 
+| 26L| Brazilian Portuguese (PTB)|
 | 101L| Bulgarian (BG)|
 | 3L| Canadian French (FRC)|
 | 102L| Catalan (CA)|
-| 103L| Croatian (HR)| 
-| 66L| Cyrillic Kazakh (CKK)| 
-| 62L| Cyrillic Serbian (CSR)| 
-| 30L| Czech (CS)| 
-| 5L| Danish (DK)| 
-| 6L| Dutch (NL)| 
-| 118L| ESTONIAN (ET)| 
-| 7L| Finnish (SF)| 
-| 2L| French (F)| 
-| 4L| German (D)| 
-| 104L| Greek (EL)| 
-| 107L| Hebrew (IW)| 
-| 28L| Hungarian (HU)| 
-| 106L| Icelandic (IS)| 
-| 46L| Indonesian (IN)| 
-| 108L| Italian (I)| 
-| 15L| Japanese (JA)| 
-| 16L| Korean (KO)| 
-| 29L| Latin American Spanish (ESA)| 
-| 63L| Latin Serbian (LSR)| 
-| 119L| LATVIAN (LV)| 
-| 109L| Lithuanian (LT)| 
-| 10L| Norwegian (N)| 
-| 110L| Polish (PL)| 
-| 18L| Portuguese (PT)| 
-| 111L| Romanian (RO)| 
-| 112L| Russian (RU)| 
-| 14L| Simplified Chinese (ZHS)| 
-| 113L| Slovak (SK)| 
-| 114L| Slovenian (SL)| 
-| 11L| Spanish (E)| 
-| 13L| Swedish (S)| 
-| 115L| Thai (TH)| 
-| 117L| Traditional Chinese (ZHT)| 
-| 116L| Turkish (TR)| 
-| 37L| UK English (GB)| 
-| 39L| Ukrainian (UK)| 
-| 43L| Vietnamese (VN)| 
-| 999L| Worldwide Spanish (ESW)| 
-
+| 103L| Croatian (HR)|
+| 66L| Cyrillic Kazakh (CKK)|
+| 62L| Cyrillic Serbian (CSR)|
+| 30L| Czech (CS)|
+| 5L| Danish (DK)|
+| 6L| Dutch (NL)|
+| 118L| ESTONIAN (ET)|
+| 7L| Finnish (SF)|
+| 2L| French (F)|
+| 4L| German (D)|
+| 104L| Greek (EL)|
+| 107L| Hebrew (IW)|
+| 28L| Hungarian (HU)|
+| 106L| Icelandic (IS)|
+| 46L| Indonesian (IN)|
+| 108L| Italian (I)|
+| 15L| Japanese (JA)|
+| 16L| Korean (KO)|
+| 29L| Latin American Spanish (ESA)|
+| 63L| Latin Serbian (LSR)|
+| 119L| LATVIAN (LV)|
+| 109L| Lithuanian (LT)|
+| 10L| Norwegian (N)|
+| 110L| Polish (PL)|
+| 18L| Portuguese (PT)|
+| 111L| Romanian (RO)|
+| 112L| Russian (RU)|
+| 14L| Simplified Chinese (ZHS)|
+| 113L| Slovak (SK)|
+| 114L| Slovenian (SL)|
+| 11L| Spanish (E)|
+| 13L| Swedish (S)|
+| 115L| Thai (TH)|
+| 117L| Traditional Chinese (ZHT)|
+| 116L| Turkish (TR)|
+| 37L| UK English (GB)|
+| 39L| Ukrainian (UK)|
+| 43L| Vietnamese (VN)|
+| 999L| Worldwide Spanish (ESW)|
