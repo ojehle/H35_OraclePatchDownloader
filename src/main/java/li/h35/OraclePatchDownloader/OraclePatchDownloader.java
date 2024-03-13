@@ -16,11 +16,14 @@ package li.h35.OraclePatchDownloader;
  */
 
 import java.io.BufferedReader;
+import java.io.Console;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FilenameFilter;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -54,12 +57,55 @@ public class OraclePatchDownloader {
 	private static File tempdir = null;
 	private static boolean tempdirDelete = false;
 	private static String user = null;
+	// do not use an character array here plus some "burn after
+	// reading" processing, as general convention dictates for
+	// passwords.  We need the password also to ensure its absence
+	// in page dumps, which seems to be more importamt.
 	private static String password = null;
 	private static SecondFAType secondFAType = SecondFAType.None;
 	private static ArrayList<String> platformList = new ArrayList<String>();
 	private static boolean checkPatchList = false;
 	private static ArrayList<Pattern> patchRegexp = new ArrayList<Pattern>();
 	private static ArrayList<String> patchList = new ArrayList<String>();
+
+	private static String readLine(String prompt, Object... args) {
+		Console console = System.console();
+		if (console != null) {
+			return console.readLine(prompt, args);
+		}
+		else {
+			try {
+				System.out.print(String.format(prompt, args));
+				return (new BufferedReader(new InputStreamReader(System.in))).readLine();
+			}
+			catch (IOException e) {
+				System.err.println("Cannot read line from STDIN");
+				e.printStackTrace(System.err);
+				System.exit(1);
+				return null;
+			}
+		}
+	}
+
+	private static String readPassword(String prompt, Object... args) {
+		Console console = System.console();
+		if (console != null) {
+			return new String(console.readPassword(prompt, args));
+		}
+		else {
+			try {
+				System.out.println("No console available, reading password with echo from STDIN");
+				System.out.print(String.format(prompt, args));
+				return (new BufferedReader(new InputStreamReader(System.in))).readLine();
+			}
+			catch (IOException e) {
+				System.err.println("Cannot read line from STDIN");
+				e.printStackTrace(System.err);
+				System.exit(1);
+				return null;
+			}
+		}
+	}
 
 	public static String getPatchFile(String url) {
 		Matcher matcher = pattern.matcher(url);
@@ -160,7 +206,7 @@ public class OraclePatchDownloader {
 							System.err.println("Cannot process 2FA entry page");
 							System.exit(1);
 						}
-						String otp = System.console().readLine(prompt);
+						String otp = readLine("%s", prompt);
 						page.getHtmlElementById("passcode").type(otp);
 						page = ((HtmlElement)page.querySelector("input[type='submit']")).click();
 					}
@@ -258,7 +304,7 @@ public class OraclePatchDownloader {
 		System.out.println(" -r : --regex       regex for file filter, multiple possible");
 		System.out.println("                    (e.g. \".*1900.*\")");
 		System.out.println(" -u : --user        email/userid");
-		System.out.println(" -p : --password    password");
+		System.out.println(" -p : --password    password (\"ENV_VAR\" to use password from env)");
 		System.out.println(" -2 : --2fatype     second factor type (one of \"None\", \"TOTP\", \"SMS\")");
 		System.out.println(" -T : --temp        temporary directory");
 	}
@@ -325,10 +371,10 @@ public class OraclePatchDownloader {
 						System.exit(1);
 					}
 				}
-        else {
+				else {
 					System.err.println("Cannot find file \"" + fp + "\"");
 					System.exit(1);
-        }
+				}
 				break;
 
 			case 't':
@@ -359,6 +405,20 @@ public class OraclePatchDownloader {
 
 			case 'p':
 				password = g.getOptarg();
+				if (password.matches("\\A[0-9A-Z_]+\\z")) {
+					if (System.getenv(password) != null) {
+						// resolve environment variable references
+						password = System.getenv(password);
+					}
+					else {
+						// give an explicit hint on a potential problem to
+						// avoid users locking themselves out from MOS when
+						// something is wrong with their environment variable
+						// definition
+						System.err.println("Password looks like an environment variable reference but there");
+						System.err.println("is no such environment variable defined.  Continuing anyway.");
+					}
+				}
 				break;
 
 			case '2':
@@ -396,10 +456,12 @@ public class OraclePatchDownloader {
 			help();
 			System.exit(1);
 		}
-		if (user == null || password == null) {
-			System.err.println("User or Password missing");
-			help();
-			System.exit(1);
+
+		if (user == null) {
+			user = readLine("%s", "MOS Username: ");
+		}
+		if (password == null) {
+			password = readPassword("%s", "MOS Password: ");
 		}
 
 		try {
