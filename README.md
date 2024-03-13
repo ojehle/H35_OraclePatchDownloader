@@ -16,7 +16,7 @@ cd H35_OraclePatchDownloader
 mvn install
 cd target
 # verify build, you can copy the file (it is complete with all dependencies)
-java -jar OraclePatchDownloader-1.0.3.jar
+java -jar OraclePatchDownloader-1.0.4.jar
 ```
 
 ## Usage
@@ -56,7 +56,7 @@ platform/language lists either as comma-separated lists
 For example:
 
 ```sh
-java -jar OraclePatchDownloader-1.0.3.jar -u user@h35.li -p password -x 200000 -t 226P,4L -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
+java -jar OraclePatchDownloader-1.0.4.jar -u user@h35.li -p password -x 200000 -t 226P,4L -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
 ```
 
 ## Plattform Codes (-t)
