@@ -27,7 +27,7 @@ platform/language lists either as comma-separated lists
 (`-x p12345678,6880880`) or through multiple repeated options
 (`-x p12345678 -x 6880880`) or through a combination of these.
 
-```sh
+```
  -h : --help        help text
 
  -d : --directory   output folder, default user home
@@ -46,17 +46,32 @@ platform/language lists either as comma-separated lists
 
  -u : --user        email/userid
 
- -p : --password    password
+ -p : --password    password ("ENV_VAR" to use password from env)
 
  -2 : --2fatype     second factor type (one of "None", "TOTP", "SMS")
 
  -T : --temp        temporary directory
 ```
 
+Note that specifying passwords on the command line is inherently
+unsafe, in particular on multi-user systems.  You should better
+enter the password interactively in the console, which is the
+default if you do not specifiy option `--password`.
+
+Or you can pass a reference to an environment variable storing
+the password in the argument to option `--password`, as shown in
+below example.  Note that only references to environment
+variables containing digits, uppercase characters, and the
+underscore are recognized in that way.  (This can be a problem if
+you use a MOS password that is equal to the name of some standard
+environment variable - but you wouldn't do *that*, would you?)
+
 For example:
 
 ```sh
-java -jar OraclePatchDownloader-1.0.4.jar -u user@h35.li -p password -x 200000 -t 226P,4L -r  ".*1900.*" -r  ".*19190.*" -d $HOME/Downloads
+export MOS_PASSWORD="my secret MOS password"
+java -jar OraclePatchDownloader-1.0.4.jar -u user@h35.li -p MOS_PASSWORD \
+     -x 200000 -t 226P,4L -r ".*1900.*" -r ".*19190.*" -d $HOME/Downloads
 ```
 
 ## Plattform Codes (-t)
