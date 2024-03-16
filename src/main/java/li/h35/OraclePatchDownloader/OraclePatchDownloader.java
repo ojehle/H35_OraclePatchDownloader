@@ -29,6 +29,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 import org.htmlunit.BrowserVersion;
 import org.htmlunit.Page;
@@ -49,13 +50,17 @@ import gnu.getopt.LongOpt;
 public class OraclePatchDownloader {
 	private static enum SecondFAType { None, TOTP, SMS }
 
+	// constants
 	private static String patchRegex = "^([p]{0,1})([0-9]{8}).*$";
 	private static Pattern patchPattern = Pattern.compile(patchRegex);
 	private static String regex = "(?:^|\\?|&)patch_file=(.*?)(?:&|$)";
 	private static Pattern pattern = Pattern.compile(regex);
+
+	// "global" variables
 	private static File directory = null;
-	private static File tempdir = null;
-	private static boolean tempdirDelete = false;
+	private static ArrayList<String> patchList = new ArrayList<String>();
+	private static ArrayList<String> platformList = new ArrayList<String>();
+	private static ArrayList<Pattern> patternList = new ArrayList<Pattern>();
 	private static String user = null;
 	// do not use a character array here plus some "burn after
 	// reading" processing, even if that is the general convention
@@ -63,10 +68,7 @@ public class OraclePatchDownloader {
 	// its absence in page dumps, which seems to be more importamt.
 	private static String password = null;
 	private static SecondFAType secondFAType = SecondFAType.None;
-	private static ArrayList<String> platformList = new ArrayList<String>();
-	private static boolean checkPatchList = false;
-	private static ArrayList<Pattern> patchRegexp = new ArrayList<Pattern>();
-	private static ArrayList<String> patchList = new ArrayList<String>();
+	private static File tempdir = null;
 
 	private static String readThing(boolean password, String prompt, Object... args) {
 		Console console = System.console();
@@ -108,7 +110,7 @@ public class OraclePatchDownloader {
 		return readThing(true, prompt, args);
 	}
 
-	public static String getPatchFile(String url) {
+	private static String getPatchFile(String url) {
 		Matcher matcher = pattern.matcher(url);
 		if (matcher.find()) {
 			return matcher.group(1);
@@ -116,12 +118,12 @@ public class OraclePatchDownloader {
 		return "";
 	}
 
-	public String getDownloadUrl(String patch, String platform) {
+	private static String getDownloadUrl(String patch, String platform) {
 		return "https://updates.oracle.com/Orion/SimpleSearch/process_form?search_type=patch&patch_number=" + patch
 				+ "&plat_lang=" + platform;
 	}
 
-	public boolean isPatchDownloaded(String patch) {
+	private static boolean isPatchDownloaded(String patch) {
 		String[] list = directory.list(new FilenameFilter() {
 			public boolean accept(File dir, String name) {
 				return name.startsWith("p" + patch) && name.endsWith(".zip");
@@ -130,7 +132,7 @@ public class OraclePatchDownloader {
 		return list.length > 0;
 	}
 
-	public OraclePatchDownloader() {
+	public static void download() throws Exception {
 		ArrayList<String> downloads = new ArrayList<String>();
 
 		// force english content since we identify login progress by
@@ -227,8 +229,8 @@ public class OraclePatchDownloader {
 									for (org.htmlunit.html.HtmlElement el : c.getHtmlElementDescendants()) {
 										String u = el.getAttribute("href");
 										if (u.startsWith("https") && u.contains(".zip")) {
-											if (patchRegexp.size() > 0) {
-												for (Pattern pattern : patchRegexp) {
+											if (patternList.size() > 0) {
+												for (Pattern pattern : patternList) {
 													if (pattern.matcher(u).matches()) {
 														downloads.add(u);
 														break;
@@ -244,14 +246,15 @@ public class OraclePatchDownloader {
 							}
 						}
 					}
-
-					// bail out if no downloads have been selected
-					if (downloads.size() == 0) {
-						System.err.println("Cannot process empty download list");
-						System.exit(1);
-					}
 				}
 			}
+
+			// bail out if no downloads have been selected at all
+			if (downloads.size() == 0) {
+				System.err.println("Cannot process empty download list");
+				System.exit(1);
+			}
+
 			for (String u : downloads) {
 				String filename = getPatchFile(u);
 				File outputFile = new File(directory, filename);
@@ -274,21 +277,9 @@ public class OraclePatchDownloader {
 				System.out.println("File " + filename + " downloaded successfully.");
 				outputStream.close();
 			}
+		}
+		finally {
 			webClient.close();
-			int exitRc = 0;
-			if (checkPatchList) {
-				for (String patch : patchList) {
-
-					if (isPatchDownloaded(patch))
-						continue;
-					exitRc = 1;
-					System.out.println("Patch " + patch + " missing");
-				}
-			}
-			System.exit(exitRc);
-		} catch (Exception e) {
-			e.printStackTrace();
-			System.exit(1);
 		}
 	}
 
@@ -329,6 +320,7 @@ public class OraclePatchDownloader {
 													longopts.toArray(new LongOpt[0]));
 		directory = new File(System.getProperty("user.home"));
 		tempdir = new File(System.getProperty("java.io.tmpdir"));
+		boolean tempdirDelete = false;
 
 		while ((c = g.getopt()) != -1)
 			switch (c) {
@@ -387,17 +379,14 @@ public class OraclePatchDownloader {
 				break;
 
 			case 'r':
-				Pattern p = null;
-				String s = g.getOptarg();
 				try {
-					p = Pattern.compile(s);
-				} catch (Exception e) {
-					System.err.println("cannot parse regexp : " + s);
+					patternList.add(Pattern.compile(g.getOptarg()));
+				}
+				catch (PatternSyntaxException e) {
+					System.err.println("Invalid regexp \"" + g.getOptarg() + "\"");
 					e.printStackTrace();
 					System.exit(1);
 				}
-				if (p != null)
-					patchRegexp.add(p);
 				break;
 
 			case 'u':
@@ -461,8 +450,13 @@ public class OraclePatchDownloader {
 			password = readPassword("MOS Password: ");
 		}
 
+		int exitRc = 0;
 		try {
-			new OraclePatchDownloader();
+			download();
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+			exitRc = 1;
 		}
 		finally {
 			if (tempdirDelete) {
@@ -472,6 +466,8 @@ public class OraclePatchDownloader {
 				tempdir.delete();
 			}
 		}
+
+		System.exit(exitRc);
 
 	}
 }
