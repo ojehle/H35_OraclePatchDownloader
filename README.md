@@ -46,7 +46,7 @@ platform/language lists either as comma-separated lists
 
  -u : --user        email/userid
 
- -p : --password    password ("ENV_VAR" to use password from env)
+ -p : --password    password ("env:ENV_VAR" to use password from env)
 
  -2 : --2fatype     second factor type (one of "None", "TOTP", "SMS")
 
@@ -70,7 +70,7 @@ For example:
 
 ```sh
 export MOS_PASSWORD="my secret MOS password"
-java -jar OraclePatchDownloader-1.0.4.jar -u user@h35.li -p MOS_PASSWORD \
+java -jar OraclePatchDownloader-1.0.4.jar -u user@h35.li -p env:MOS_PASSWORD \
      -x 200000 -t 226P,4L -r ".*1900.*" -r ".*19190.*" -d $HOME/Downloads
 ```
 
