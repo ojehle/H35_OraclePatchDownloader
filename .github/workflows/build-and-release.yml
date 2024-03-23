@@ -1,0 +1,85 @@
+# Copyright (c) 2024 H35 GmbH
+# Copyright (c) 2024 Jens Schmidt
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Java Build and Release
+
+on:
+  push:
+    branches: [ "master" ]
+    tags:     [ "v*" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build-and-release:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Check out Sources
+        uses: actions/checkout@v4
+
+      # explicitly fetch the tag that caused the release.
+      # Without that, the release tag will be present as
+      # light-weight tag only.  Using the "fetch-tags" option to
+      # the checkout action above does not help.  See also
+      # https://github.com/actions/checkout/issues/701,
+      # https://github.com/actions/checkout/issues/1467.
+      - name: Fetch Release Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: git fetch --force --tags origin "${{ github.ref }}"
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '8'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn --batch-mode package
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash -e -o pipefail {0}
+        run: |
+          # determine tag name
+          tagname="${{ github.ref_name }}"
+
+          # ensure this is a version tag and determine its version
+          [[ $tagname =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 0
+          version=${tagname#v}
+
+          # ensure this is an annotated tag and determine its
+          # description
+          [[ $( git cat-file -t "$tagname" ) == "tag" ]] || exit 0
+          tagdesc=$( git for-each-ref --format='%(contents:body)' \
+                                      "refs/tags/$tagname" )
+
+          # ensure the target jar is present with the correct
+          # version
+          if [[ ! -f "target/oraclePatchDownloader-$version.jar" ]]; then
+            echo "Cannot process missing target jar for version \"$version\"." 1>&2
+            exit 1
+          fi
+
+          gh release create                     \
+             --title "Version $version"         \
+             --notes "$tagdesc"                 \
+             "$tagname"                         \
+             "target/oraclePatchDownloader-$version.jar"
