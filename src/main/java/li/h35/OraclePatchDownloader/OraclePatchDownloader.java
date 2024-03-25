@@ -408,7 +408,7 @@ public class OraclePatchDownloader {
 		longopts.add( new LongOpt("temp",      LongOpt.REQUIRED_ARGUMENT, null, 'T') );
 
 		Getopt g = new Getopt("OraclePatchDownoader", args, "hd:x:f:t:r:u:p:2:T:",
-													longopts.toArray(new LongOpt[0]));
+													longopts.toArray(new LongOpt[longopts.size()]));
 		g.setOpterr(false); // do our own error handling
 		directory = new File(System.getProperty("user.home"));
 		tempdir = new File(System.getProperty("java.io.tmpdir"));
