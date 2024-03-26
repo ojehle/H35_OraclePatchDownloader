@@ -53,6 +53,10 @@ and the platform/language list either as comma-separated lists
 ```
  -h : --help        help text
 
+ -D : --debug       debug mode
+
+ -q : --quiet       quiet mode
+
  -d : --directory   output folder, default user home
 
  -x : --patches     list of patches
@@ -74,7 +78,7 @@ and the platform/language list either as comma-separated lists
  -T : --temp        temporary directory
 ```
 
-### Specifying the Password
+### Specifying Passwords
 
 Specifying passwords on the command line is inherently unsafe, in
 particular on multi-user systems.  You should better enter the
@@ -84,6 +88,24 @@ you do not specify option `--password`.
 Or you can store the password in an environment variable and pass
 a reference to that variable in the argument to option
 `--password`, as shown in the example below.
+
+### Debug Mode
+
+In debug mode the Oracle Patch Downloader dumps all HTML pages
+that it processes to the output folder.  In addition, it logs
+HTTP requests and responses to a log file, also placed in the
+output folder.  The downloader uses file names
+`dump-<hex-timestamp>-<page-title>.xml` for dumps of regular
+pages and file names `error-<hex-timestamp>-<page-title>.xml` for
+dumps of pages it could not process.
+
+**Note that the log file most certainly contains sensitive data,
+likewise for the page dumps.**
+
+The Downloader uses the APIs provided by HtmlUnit to dump HTML
+pages and log HTTP requests and responses.  The information
+retrieved through these APIs differs from the actual data sent
+over the wire.
 
 ### Example
 
