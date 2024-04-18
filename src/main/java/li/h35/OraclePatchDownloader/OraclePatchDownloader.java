@@ -50,6 +50,7 @@ import org.htmlunit.html.HtmlElement;
 import org.htmlunit.html.HtmlForm;
 import org.htmlunit.html.HtmlInput;
 import org.htmlunit.html.HtmlPage;
+import org.htmlunit.html.HtmlRadioButtonInput;
 import org.htmlunit.html.HtmlTable;
 import org.htmlunit.html.HtmlTableCell;
 import org.htmlunit.html.HtmlTableRow;
@@ -60,7 +61,7 @@ import gnu.getopt.Getopt;
 import gnu.getopt.LongOpt;
 
 public class OraclePatchDownloader {
-	private static enum SecondFAType { None, TOTP, SMS }
+	private static enum SecondFAType { Default, TOTP, SMS, None }
 
 	//-----------------------------------------------------------------
 	// constants
@@ -92,7 +93,7 @@ public class OraclePatchDownloader {
 	// for handling passwords.  The security gain does not seem to
 	// justify the effort required to do so.
 	private static String password = null;
-	private static SecondFAType secondFAType = SecondFAType.None;
+	private static SecondFAType secondFAType = SecondFAType.Default;
 	private static File tempdir = null;
 
 	//-----------------------------------------------------------------
@@ -412,8 +413,9 @@ public class OraclePatchDownloader {
 					// some element is absent:
 					//
 					// DomElement.getAttribute:     returns ATTRIBUTE_NOT_DEFINED
-					// DomNode.querySelector:       returns null
 					// DomNode.getByXPath:          returns empty list
+					// DomNode.getFirstByXPath:     returns null
+					// DomNode.querySelector:       returns null
 					// HtmlPage.getElementById:     returns null
 					// HtmlPage.getElementsById:    returns empty list
 					// HtmlPage.getFormByName:      throws ENFE
@@ -442,7 +444,30 @@ public class OraclePatchDownloader {
 						progress("Processing 2FA selection page...");
 						try {
 							HtmlForm form = page.getFormByName("loginForm");
-							if (secondFAType.equals(SecondFAType.TOTP)) {
+							if (secondFAType.equals(SecondFAType.Default)) {
+								// determine the default 2FA method.  To avoid an
+								// exception when one of the methods is not
+								// available, protect the calls to ENFE-throwing
+								// method getInputByValue() by equivalent calls
+								// to method getFirstByXPath().
+								try {
+									if ((form.getFirstByXPath(".//input[@type='radio'][@value='Totp']") != null) &&
+											((HtmlRadioButtonInput)form.getInputByValue("Totp")).isChecked()) {
+										secondFAType = SecondFAType.TOTP;
+									}
+									else if ((form.getFirstByXPath(".//input[@type='radio'][@value='Sms']") != null) &&
+													 ((HtmlRadioButtonInput)form.getInputByValue("Sms")).isChecked()) {
+										secondFAType = SecondFAType.SMS;
+									}
+									else {
+										error("Cannot process 2FA selection page", page);
+									}
+								}
+								catch (ClassCastException e) {
+									error("Cannot process 2FA selection page", e, page);
+								}
+							}
+							else if (secondFAType.equals(SecondFAType.TOTP)) {
 								form.getInputByValue("Totp").click();
 							}
 							else if (secondFAType.equals(SecondFAType.SMS)) {
