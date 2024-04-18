@@ -111,8 +111,8 @@ over the wire.
 
 ```sh
 export MOS_PASSWORD="my secret MOS password"
-java -jar OraclePatchDownloader-1.0.4.jar -u user@h35.li -p env:MOS_PASSWORD \
-     -x 200000 -t 226P,4L -r ".*1900.*" -r ".*19190.*" -d $HOME/Downloads
+java -jar oraclePatchDownloader-1.0.4.jar -u user@h35.li -p env:MOS_PASSWORD \
+     -x 26749785 -t 226P,4L -r ".*1900.*" -r ".*19190.*" -d $HOME/Downloads
 ```
 
 ## Installation
@@ -123,9 +123,8 @@ following commands:
 ```sh
 git clone git@github.com:ojehle/H35_OraclePatchDownloader.git
 cd H35_OraclePatchDownloader
-mvn install
-cd target
-java -jar OraclePatchDownloader-1.0.4.jar
+mvn package
+java -jar target/oraclePatchDownloader-1.0.4.jar
 ```
 
 The resulting jar is self-contained and does not require any
