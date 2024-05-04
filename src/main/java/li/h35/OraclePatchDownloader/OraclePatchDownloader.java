@@ -53,6 +53,7 @@ import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathFactory;
 
 import org.htmlunit.BrowserVersion;
+import org.htmlunit.DefaultCredentialsProvider;
 import org.htmlunit.ElementNotFoundException;
 import org.htmlunit.Page;
 import org.htmlunit.SgmlPage;
@@ -103,6 +104,10 @@ public class OraclePatchDownloader {
 	//-----------------------------------------------------------------
 	// constants
 	//-----------------------------------------------------------------
+
+	// user-agent to use.  When masquerading as wget, MOS accepts
+	// basic authentication for patch searches and downloads.
+	private final static String USER_AGENT = "Wget/1.21.3";
 
 	// short-hands for XPathConstants
 	private final static QName XPC_STRING  = XPathConstants.STRING;
@@ -408,8 +413,10 @@ public class OraclePatchDownloader {
 		// (localized) content
 		BrowserVersion.BrowserVersionBuilder browserVersionBuilder =
 			new BrowserVersion.BrowserVersionBuilder(BrowserVersion.FIREFOX);
-		browserVersionBuilder.setBrowserLanguage("en-US");
-		browserVersionBuilder.setAcceptLanguageHeader("en-US");
+		browserVersionBuilder
+			.setUserAgent(USER_AGENT)
+			.setBrowserLanguage("en-US")
+			.setAcceptLanguageHeader("en-US");
 
 		// determine request-response log file
 		File rrLogFile;
@@ -429,6 +436,12 @@ public class OraclePatchDownloader {
 					 null) {
 			webClient.getOptions().setJavaScriptEnabled(true);
 			webClient.getOptions().setTempFileDirectory(tempdir);
+
+			// unconditionally use basic authentication.  See issue
+			// #12.
+			DefaultCredentialsProvider creds = new DefaultCredentialsProvider();
+			creds.addCredentials(user, password.toCharArray());
+			webClient.setCredentialsProvider(creds);
 
 			// set a custom web connection wrapper to be able to log
 			// requests and their responses
