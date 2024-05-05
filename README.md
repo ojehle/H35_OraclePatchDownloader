@@ -15,9 +15,7 @@ big executable jar.
 
 There are other similar tools available, for example
 [oracle_quarter_patch_downloader](https://github.com/lucaslellis/oracle_quarter_patch_downloader)
-or [getMOSPatch](https://github.com/MarisElsins/getMOSPatch), the
-latter of which is reported to be
-[broken](https://github.com/MarisElsins/getMOSPatch/issues/34).
+or [getMOSPatch](https://github.com/MarisElsins/getMOSPatch).
 
 The Oracle Quarter Patch Downloader provides additional logic to
 download important database and GI patches based on the Automated
@@ -55,7 +53,7 @@ and the platform/language list either as comma-separated lists
 
  -D : --debug       debug mode
 
- -q : --quiet       quiet mode
+ -Q : --quiet       quiet mode
 
  -d : --directory   output folder, default user home
 
@@ -65,11 +63,15 @@ and the platform/language list either as comma-separated lists
  -f : --patchfile   file containing list of patches, one patch per line
                     (e.g. "p12345678", "12345678", "# comment")
 
- -t : --platforms   list of platforms or languages
-                    (e.g. "226P" for Linux x86-64 or "4L" for German (D))
+ -q : --query |     list of platforms, releases, or languages
+ -t : --platforms   (e.g. "226P" for Linux x86-64, "600000000063735R"
+                    for OPatch 12.2.0.1.2, or "4L" for German (D))
 
  -r : --regex       regex for file filter, multiple possible
                     (e.g. ".*1900.*")
+
+      --authmeth    MOS authentication method, one or more of "Basic",
+                    "Legacy", or "IDCS", default "Basic,IDCS"
 
  -u : --user        email/userid
 
@@ -89,6 +91,45 @@ Or you can store the password in an environment variable and pass
 a reference to that variable in the argument to option
 `--password`, as shown in the example below.
 
+### Example
+
+```sh
+export MOS_PASSWORD="my secret MOS password"
+java -jar oraclePatchDownloader-1.0.4.jar -u user@h35.li -p env:MOS_PASSWORD \
+     -x 26749785 -t 226P,4L -r ".*1900.*" -r ".*19190.*" -d $HOME/Downloads
+```
+
+### Authentication Methods
+
+The Oracle Patch Downloader can log on to My Oracle Support
+through different authentication methods:
+
+- `Basic`
+
+  Basic (but nonetheless secure) HTTPS authentication.  In
+  contrast to the following methods this one does not involve
+  execution of JavaScript and, hence, is the fastest of all
+  methods.
+
+- `Legacy`
+
+  "Single-paged logon", legacy authentication method.  Most
+  likely obsolete since May 2024.
+
+- `IDCS`
+
+  "Two-paged logon", authentication based on Oracle Identity
+  Cloud Service.
+
+By default, the downloader tries to log on through basic
+authentication first and, if that fails, then through IDCS-based
+authentication.
+
+To override the authentication methods being attempted, specify
+one or more of the above methods separated by commas to command
+line option `--authmeth`.  For example, to force the exclusive
+use of IDCS-based authentication, specify `--authmeth IDCS`.
+
 ### Debug Mode
 
 In debug mode the Oracle Patch Downloader dumps all HTML pages
@@ -106,14 +147,6 @@ The Downloader uses the APIs provided by HtmlUnit to dump HTML
 pages and log HTTP requests and responses.  The information
 retrieved through these APIs differs from the actual data sent
 over the wire.
-
-### Example
-
-```sh
-export MOS_PASSWORD="my secret MOS password"
-java -jar oraclePatchDownloader-1.0.4.jar -u user@h35.li -p env:MOS_PASSWORD \
-     -x 26749785 -t 226P,4L -r ".*1900.*" -r ".*19190.*" -d $HOME/Downloads
-```
 
 ## Installation
 
