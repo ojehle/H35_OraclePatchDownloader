@@ -83,13 +83,13 @@ public class OraclePatchDownloader {
 		private final String name;
 
 		@SuppressWarnings("unused")
-		private final int size;
+		private final long size;
 
 		private final String url;
 
 		private final String sha256;
 
-		private DownloadFile(String name, int size, String url, String sha256) {
+		private DownloadFile(String name, long size, String url, String sha256) {
 			this.name = name;
 			this.size = size;
 			this.url = url;
@@ -599,7 +599,7 @@ public class OraclePatchDownloader {
 
 						// create a new download file and check its name
 						// against the user-specified patterns
-						DownloadFile dlf = new DownloadFile(name, Integer.parseInt(size), host + path, sha256);
+						DownloadFile dlf = new DownloadFile(name, Long.parseLong(size), host + path, sha256);
 						if (patternList.size() > 0) {
 							for (Pattern pattern : patternList) {
 								if (pattern.matcher(name).matches()) {
