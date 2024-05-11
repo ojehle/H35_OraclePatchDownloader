@@ -1,3 +1,19 @@
+<!--
+  == Copyright (c) 2024 H35 GmbH
+  == Copyright (c) 2024 Jens Schmidt
+  ==
+  == Licensed under the Apache License, Version 2.0 (the "License");
+  == you may not use this file except in compliance with the License.
+  == You may obtain a copy of the License at
+  == https://www.apache.org/licenses/LICENSE-2.0
+  ==
+  == Unless required by applicable law or agreed to in writing, software
+  == distributed under the License is distributed on an "AS IS" BASIS,
+  == WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  == See the License for the specific language governing permissions and
+  == limitations under the License.
+  -->
+
 # Oracle Patch Downloader
 
 The Oracle Patch Downloader can be used to download a list of
@@ -129,6 +145,93 @@ java -jar target/oraclePatchDownloader-1.0.6.jar
 
 The resulting jar is self-contained and does not require any
 additional dependencies during runtime.
+
+## Contributing
+
+As [experience has shown][issue_14], even the smallest projects need
+at least some standards.  If you plan to contribute more than
+just a couple of changed lines to the Oracle Patch Downloader,
+then here are some instructions on how to prepare your IDE or
+editor to not cause too much reformatting trouble.
+
+[issue_14]: https://github.com/ojehle/H35_OraclePatchDownloader/issues/14
+
+### Eclipse
+
+This project comes with project specific settings named `Default`
+both for the Eclipse Java formatter and for Eclipse Java cleanup.
+Plus it should configure Eclipse such that it runs a format on
+each save of a Java source file.
+
+Some notes on that:
+
+- The project specific formatter and cleanup settings have been
+  tested on Eclipse version 2024-03 (4.31.0).
+
+- Ensure that the project specific settings are enabled by
+  comparing `Project` &rarr; `Properties` with the following
+  screenshots:
+
+  ![Cleanup Settings](assets/eclipse-settings-cleanup.png?raw=true)
+
+  ![Formatter Settings](assets/eclipse-settings-formatter.png?raw=true)
+
+  ![Save Actions](assets/eclipse-save-actions.png?raw=true)
+
+  "Enable project specific settings" should be checked on all of
+  these, and on the former two screenshots "Unmanaged profile
+  'Default'" should be selected as active profile.
+
+- Probably better avoid doing full cleanups as triggered by
+  `Source` &rarr; `Clean Up...`.  If you really feel you would
+  need to clean up the sources in that way, do *not* use a custom
+  profile, but rather the configured profile "Unmanaged profile
+  'Default'" from the project as shown in the following
+  screenshot:
+
+  ![Cleanup Wizard](assets/eclipse-cleanup-wizard.png?raw=true)
+
+- Unfortunately, Eclipse as version 4.31.0 with the given
+  settings seems to behave slightly inconsistently when it
+  indents or formats Java code: A continuation line of some
+  wrapped line might get indented differently with `TAB`/`Ctrl+I`
+  ("Correct Indentation") and with `Shift-Ctrl-F` ("Format").
+  Mainly for that reason we have switched on source code
+  formatting in the project's save actions.
+
+- It is not clear to what extent the user-configured workspace
+  settings from `Window` &rarr; `Preferences` can override or
+  conflict with the project specific settings.  If in doubt,
+  better review your changes in the Git perspective of Eclipse
+  before comitting them.
+
+<!--
+  == Note: In file `.settings/org.eclipse.jdt.ui.prefs` there are
+  == two complete sets of cleanup settings, one with prefix
+  == `cleanup.` and one with prefix `sp_cleanup.`.  The former
+  == set is used when invoking the cleanup wizard interactively,
+  == the latter set is used during the save actions.  However,
+  == the cleanup done during the save actions luckily only uses
+  == a very small subset of all these `sp_cleanup.*` settings,
+  == namely only `sp_cleanup.format_source_code=true` and
+  == `sp_cleanup.organize_imports=true`.  See also [Eclipse bug
+  == 178429][eclipse_bug_178429].
+  ==
+  == [eclipse_bug_178429]: https://bugs.eclipse.org/bugs/show_bug.cgi?id=178429
+  -->
+
+### Emacs
+
+Install package `smart-tabs-mode` from [MELPA](https://melpa.org)
+and add the following to your Emacs initialization file:
+
+```elisp
+(smart-tabs-insinuate 'java)
+```
+
+Some notes on that:
+
+- The Emacs configuration has been tested on Emacs 28.2.
 
 ## Plattform and Language Codes
 

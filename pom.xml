@@ -6,27 +6,27 @@
 	<artifactId>oraclePatchDownloader</artifactId>
 
 	<!--
-		== To release a new version X.Y.Z:
-		==
-		== - Bump the version below to X.Y.Z.
-		==
-		== - Change references to the previous version in README.md
-		==   to X.Y.Z (3 hits as of this writing).
-		==
-		== - Commit above changes.
-		==
-		== - Tag them with an annotated commit as follows:
-		==
-		==     $ git tag -a vX.Y.Z
-		==
-		==   The tag description that you provide (sans the first
-		==   subject line) will be used as release description.
-		==   Markdown supported.
-		==
-		== - Push the tag as follows:
-		==
-		==     $ git push origin vX.Y.Z
-		-->
+	  == To release a new version X.Y.Z:
+	  ==
+	  == - Bump the version below to X.Y.Z.
+	  ==
+	  == - Change references to the previous version in README.md
+	  ==   to X.Y.Z (3 hits as of this writing).
+	  ==
+	  == - Commit above changes.
+	  ==
+	  == - Tag them with an annotated commit as follows:
+	  ==
+	  ==     $ git tag -a vX.Y.Z
+	  ==
+	  ==   The tag description that you provide (sans the first
+	  ==   subject line) will be used as release description.
+	  ==   Markdown supported.
+	  ==
+	  == - Push the tag as follows:
+	  ==
+	  ==     $ git push origin vX.Y.Z
+	  -->
 
 	<version>1.0.6</version>
 
