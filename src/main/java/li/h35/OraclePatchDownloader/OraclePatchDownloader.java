@@ -87,6 +87,7 @@ public class OraclePatchDownloader {
 	private static class DownloadFile {
 		private final String name;
 
+		@SuppressWarnings("unused")
 		private final int size;
 
 		private final String url;
@@ -187,6 +188,8 @@ public class OraclePatchDownloader {
 	// progress(), respectively.
 
 	private static class ExitException extends Exception {
+		private final static long serialVersionUID = 1L;
+
 		public final int exitval;
 
 		public ExitException(int exitval) {
@@ -209,6 +212,7 @@ public class OraclePatchDownloader {
 		error(format, (Exception)null, p, args);
 	}
 
+	@SuppressWarnings("unused")
 	private static void error(String format, Exception e, Object... args)
 		throws ExitException {
 		error(format, e, (Page)null, args);
