@@ -419,6 +419,7 @@ public class OraclePatchDownloader {
 
 	private static boolean isPatchDownloaded(String patch) {
 		String[] list = directory.list(new FilenameFilter() {
+			@Override
 			public boolean accept(File dir, String name) {
 				return name.startsWith("p" + patch) && name.endsWith(".zip");
 			}
@@ -658,12 +659,14 @@ public class OraclePatchDownloader {
 						Node dlfile = dlfiles.item(i);
 
 						// extract parts of the download file node
-						String name = (String)xpath.evaluate("./name/text()", dlfile, XPC_STRING);
-						String size = (String)xpath.evaluate("./size/text()", dlfile, XPC_STRING);
-						String host = (String)xpath.evaluate("./download_url/@host", dlfile, XPC_STRING);
+						// @formatter:off
+						String name = (String)xpath.evaluate("./name/text()",         dlfile, XPC_STRING);
+						String size = (String)xpath.evaluate("./size/text()",         dlfile, XPC_STRING);
+						String host = (String)xpath.evaluate("./download_url/@host",  dlfile, XPC_STRING);
 						String path = (String)xpath.evaluate("./download_url/text()", dlfile, XPC_STRING);
 						String sha256 =
-							(String)xpath.evaluate("./digest[@type='SHA-256']/text()", dlfile, XPC_STRING);
+						  (String)xpath.evaluate("./digest[@type='SHA-256']/text()",  dlfile, XPC_STRING);
+						// @formatter:on
 
 						// verify them at least to some extent
 						if (name == null || name.length() == 0)
@@ -785,6 +788,7 @@ public class OraclePatchDownloader {
 
 		int c;
 		ArrayList<LongOpt> longopts = new ArrayList<>();
+		// @formatter:off
 		longopts.add( new LongOpt("help",      LongOpt.NO_ARGUMENT,       null, 'h') );
 		longopts.add( new LongOpt("debug",     LongOpt.NO_ARGUMENT,       null, 'D') );
 		longopts.add( new LongOpt("quiet",     LongOpt.NO_ARGUMENT,       null, 'Q') );
@@ -798,6 +802,7 @@ public class OraclePatchDownloader {
 		longopts.add( new LongOpt("password",  LongOpt.REQUIRED_ARGUMENT, null, 'p') );
 		longopts.add( new LongOpt("2fatype",   LongOpt.REQUIRED_ARGUMENT, null, '2') );
 		longopts.add( new LongOpt("temp",      LongOpt.REQUIRED_ARGUMENT, null, 'T') );
+		// @formatter:on
 
 		Getopt g = new Getopt("OraclePatchDownoader", args,
 													"hDQd:x:f:q:t:r:u:p:2:T:",
@@ -934,11 +939,13 @@ public class OraclePatchDownloader {
 			int qlmo = query.length() - 1;            // query-lenght-minus-one
 			String qid = query.substring(0, qlmo);
 			String qt  = null;
+			// @formatter:off
 			switch (query.charAt(qlmo)) {
 			case 'L': qt = "language"; break;
 			case 'P': qt = "platform"; break;
 			case 'R': qt = "release";  break;
 			}
+			// @formatter:on
 
 			// associate query id to query term in the map
 			List<String> qids;
