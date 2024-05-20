@@ -223,14 +223,28 @@ public class OraclePatchDownloader {
 		error(format, (Exception)null, (Page)null, args);
 	}
 
-	private static void warn(String format, Exception e, Object... args) {
+	private static void warn(String format, Exception e, Page p, Object... args) {
 		System.err.println(format(format, args));
 		if (e != null)
 			e.printStackTrace(System.err);
+		if (p != null && debugMode)
+			dumpInternal(p, true);
+	}
+
+	private static void warn(String format, Page p, Object... args) {
+		warn(format, (Exception)null, p, args);
+	}
+
+	private static void warn(String format, Exception e, Object... args) {
+		warn(format, e, (Page)null, args);
 	}
 
 	private static void warn(String format, Object... args) {
-		warn(format, (Exception)null, args);
+		warn(format, (Exception)null, (Page)null, args);
+	}
+
+	private static void warn() {
+		System.err.println();
 	}
 
 	private static void progress(String format, Object... args) {
@@ -412,6 +426,7 @@ public class OraclePatchDownloader {
 
 	public static void download() throws Exception {
 		List<DownloadFile> downloads = new ArrayList<>();
+		List<String> searchErrorList = new ArrayList<>();
 
 		// force english content since we identify login progress by
 		// (localized) content
@@ -622,11 +637,15 @@ public class OraclePatchDownloader {
 					Document result =
 						xmlparser.parse(new InputSource(new StringReader(content)));
 
-					// check for search errors
+					// check for search errors.  For now only warn about
+					// them, but throw an error after we have completed (or
+					// not) downloading any remaining patches.
 					Node error;
-					if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null)
-						error("Cannot process search error \"%s\"",
-									page, error.getTextContent().trim().replaceAll("\\s+", " "));
+					if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null) {
+						warn("Cannot process search error \"%s\"",
+						     page, error.getTextContent().trim().replaceAll("\\s+", " "));
+						searchErrorList.add(patch);
+					}
 
 					NodeList dlfiles = (NodeList)dlfileXPE.evaluate(result, XPC_NODESET);
 					for (int i = 0; i < dlfiles.getLength(); i++) {
@@ -710,6 +729,16 @@ public class OraclePatchDownloader {
 				progress("SHA-256 checksums as provided by MOS:");
 				for (DownloadFile dlf : downloads)
 					result("%s  %s", dlf.sha256, dlf.name);
+			}
+
+			// dump information on search errors and error out if there
+			// were any
+			if (searchErrorList.size() > 0) {
+				warn();
+				warn("Search errors occurred for the following patches:");
+				for (String patch : searchErrorList)
+					warn("  %s", patch);
+				error("Cannot process previous search errors");
 			}
 		}
 	}
