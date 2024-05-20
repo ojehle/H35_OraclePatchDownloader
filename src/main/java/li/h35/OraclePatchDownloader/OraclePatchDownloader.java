@@ -28,11 +28,15 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IllegalFormatException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -52,9 +56,12 @@ import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathFactory;
 
+import org.apache.http.client.CredentialsProvider;
+
 import org.htmlunit.BrowserVersion;
 import org.htmlunit.DefaultCredentialsProvider;
 import org.htmlunit.ElementNotFoundException;
+import org.htmlunit.FailingHttpStatusCodeException;
 import org.htmlunit.Page;
 import org.htmlunit.SgmlPage;
 import org.htmlunit.TextPage;
@@ -63,6 +70,8 @@ import org.htmlunit.WebClient;
 import org.htmlunit.WebRequest;
 import org.htmlunit.WebResponse;
 import org.htmlunit.html.DomElement;
+import org.htmlunit.html.DomNode;
+import org.htmlunit.html.HtmlButton;
 import org.htmlunit.html.HtmlElement;
 import org.htmlunit.html.HtmlForm;
 import org.htmlunit.html.HtmlInput;
@@ -81,6 +90,8 @@ public class OraclePatchDownloader {
 	//-----------------------------------------------------------------
 	// enums and inner classes
 	//-----------------------------------------------------------------
+
+	private static enum AuthMeth { Basic, Legacy, IDCS }
 
 	private static enum SecondFAType { Default, TOTP, SMS, None }
 
@@ -102,30 +113,6 @@ public class OraclePatchDownloader {
 	}
 
 	//-----------------------------------------------------------------
-	// constants
-	//-----------------------------------------------------------------
-
-	// user-agent to use.  When masquerading as wget, MOS accepts
-	// basic authentication for patch searches and downloads.
-	private final static String USER_AGENT = "Wget/1.21.3";
-
-	// short-hands for XPathConstants
-	private final static QName XPC_STRING  = XPathConstants.STRING;
-	private final static QName XPC_NODE    = XPathConstants.NODE;
-	private final static QName XPC_NODESET = XPathConstants.NODESET;
-
-	// regex that matches a line in a patch file.  The first
-	// subgroup provides the patch number.
-	private final static String  PATCH_FILE_LINE_REGEX   = "^p?(\\d{8,10}).*$";
-	private final static Pattern PATCH_FILE_LINE_PATTERN = Pattern.compile(PATCH_FILE_LINE_REGEX);
-
-	// XPath expression to search for errors
-	private final static String RESULT_ERROR_XPE  = "/results/error";
-
-	// XPath expression to search for downloadable files
-	private final static String DOWNLOAD_FILE_XPE = "/results/patch/files/file";
-
-	//-----------------------------------------------------------------
 	// "global" variables
 	//-----------------------------------------------------------------
 
@@ -135,6 +122,8 @@ public class OraclePatchDownloader {
 	private static ArrayList<String> patchList = new ArrayList<>();
 	private static HashMap<String, List<String>> queryMap = new HashMap<>();
 	private static ArrayList<Pattern> patternList = new ArrayList<>();
+	private static Set<AuthMeth> authMeths =
+		new HashSet<>(Arrays.asList(AuthMeth.Basic, AuthMeth.IDCS));
 	private static String user = null;
 	// do not use a character array here plus some "burn after
 	// reading" processing, even if that is the general convention
@@ -403,20 +392,375 @@ public class OraclePatchDownloader {
 	}
 
 	//-----------------------------------------------------------------
-	// download
+	// authenticate and friends
 	//-----------------------------------------------------------------
+
+	// URL of some "login page".  Fetching this URL should result
+	// in a) the MOS login procedure being triggered but b) in some
+	// small document with known content having type text/plain.
+	// Another possible candidate would be
+	//
+	//   https://updates.oracle.com/Orion/Services/metadata
+	private final static String LOGIN_PAGE_URL =
+		"https://updates.oracle.com/Orion/Services/search";
+
+	// regex that matches the content of the login page
+	private final static String LOGIN_PAGE_REGEX =
+		"(?s:\\s*<results>\\s*<error>.*</error>\\s*</results>\\s*)";
+
+	// returns whether the specified page is an instance of class
+	// HtmlPage and fulfills the specified test
+	private static boolean testHtmlPage(Page page,
+																			Predicate<HtmlPage> pageTest)	{
+		return page instanceof HtmlPage &&
+			     pageTest.test((HtmlPage)page);
+	}
+
+	// returns whether the specified page is an instance of class
+	// HtmlPage and fulfills the specified test.  Repeats that test
+	// the specified number of tries, waiting the specified number
+	// of milliseconds for background JavaScript before each test.
+	private static boolean testHtmlPage(Page page,
+																			Predicate<HtmlPage> pageTest,
+																			int tries, int waitMillis,
+																			WebClient webClient)	{
+		// do not dump every single page while waiting, only the
+		// final one, but that regardless of whether it fulfills the
+		// test or not
+		do {
+			webClient.waitForBackgroundJavaScript(waitMillis);
+			page = page.getEnclosingWindow().getEnclosedPage();
+			try {
+				if (testHtmlPage(page, pageTest))
+					break;
+			}
+			catch (Exception e) {
+				// (almost) ignore exceptions while waiting since the
+				// JavaScript working in the background may temporarily
+				// leave the page in some undefined state which lets the
+				// test error out.  (For the same reason do *not* try to
+				// dump the page with the warning below.)
+				if (debugMode)
+					warn("Caught exception while testing page", e);
+			}
+			tries--;
+		} while (tries > 0);
+		dump(page);
+		return tries > 0;
+	}
+
+	// authenticate to MOS.  After completion of this method, the
+	// web client should be primed with all required cookies so
+	// that the following fetches from MOS will not query for
+	// authentication any more.
+	private static void authenticate(WebClient webClient) throws Exception {
+		//-----------------------------------
+		// basic authentication
+		//-----------------------------------
+
+		// prepare to use basic authentication but remember the
+		// previous credentials provider first to reset it later
+		CredentialsProvider pcp = webClient.getCredentialsProvider();
+		if (authMeths.contains(AuthMeth.Basic)) {
+			DefaultCredentialsProvider cp = new DefaultCredentialsProvider();
+			cp.addCredentials(user, password.toCharArray());
+			webClient.setCredentialsProvider(cp);
+		}
+
+		Page page = null;
+		try {
+			page = webClient.getPage(LOGIN_PAGE_URL);
+			dump(page);
+		}
+		catch (FailingHttpStatusCodeException e) {
+			error("Cannot process login page - login failed?", e);
+		}
+
+		// A short overview on how HtmlUnit methods react when some
+		// element is absent:
+		//
+		// 	 DomElement.getAttribute:     returns ATTRIBUTE_NOT_DEFINED
+		// 	 DomNode.getByXPath:          returns empty list
+		// 	 DomNode.getFirstByXPath:     returns null
+		//   DomNode.getFirstChild:       returns null
+		// 	 DomNode.querySelector:       returns null
+		// 	 HtmlPage.getElementById:     returns null
+		// 	 HtmlPage.getElementsById:    returns empty list
+		// 	 HtmlPage.getFormByName:      throws ENFE
+		// 	 HtmlPage.getHtmlElementById: throws ENFE
+		// 	 HtmlForm.getInputByName:     throws ENFE
+		// 	 HtmlForm.getInputByValue:    throws ENFE
+
+		//-----------------------------------
+		// legacy MOS authentication
+		//
+		// Probably obsolete since May 2024, but let us keep the
+		// code, anyway.
+		//-----------------------------------
+
+		if (authMeths.contains(AuthMeth.Legacy) &&
+				testHtmlPage(
+					page,
+					hpage
+					-> hpage.getTitleText().equals("Oracle Login - Single Sign On"))) {
+			progress("Processing login page...");
+			try {
+				HtmlPage hpage = (HtmlPage)page;
+				HtmlForm form = hpage.getFormByName("LoginForm");
+				form.getInputByName("ssousername").type(user);
+				form.getInputByName("password").type(password);
+				page = hpage.getHtmlElementById("signin_button").click();
+				dump(page);
+			}
+			catch (ElementNotFoundException e) {
+				error("Cannot process login page", e, page);
+			}
+
+			if (testHtmlPage(
+						page,
+						hpage
+						-> hpage.getTitleText().equals("Login - Oracle Access Management 11g")
+						&& hpage.getElementById("loginForm") != null
+						&& hpage.getElementById("loginForm").asNormalizedText()
+										.indexOf("Please choose your preferred method") >= 0)) {
+				progress("Processing 2FA selection page...");
+				try {
+					HtmlPage hpage = (HtmlPage)page;
+					HtmlForm form = hpage.getFormByName("loginForm");
+					if (secondFAType.equals(SecondFAType.Default)) {
+						// determine the default 2FA method.  To avoid an
+						// exception when one of the methods is not
+						// available, protect the calls to ENFE-throwing
+						// method getInputByValue() by equivalent calls to
+						// method getFirstByXPath().
+						try {
+							if ((form.getFirstByXPath(".//input[@type='radio'][@value='Totp']") != null) &&
+									((HtmlRadioButtonInput)form.getInputByValue("Totp")).isChecked()) {
+								secondFAType = SecondFAType.TOTP;
+							}
+							else if ((form.getFirstByXPath(".//input[@type='radio'][@value='Sms']") != null) &&
+											 ((HtmlRadioButtonInput)form.getInputByValue("Sms")).isChecked()) {
+								secondFAType = SecondFAType.SMS;
+							}
+							else {
+								error("Cannot process 2FA selection page", page);
+							}
+						}
+						catch (ClassCastException e) {
+							error("Cannot process 2FA selection page", e, page);
+						}
+					}
+					else if (secondFAType.equals(SecondFAType.TOTP)) {
+						form.getInputByValue("Totp").click();
+					}
+					else if (secondFAType.equals(SecondFAType.SMS)) {
+						form.getInputByValue("Sms").click();
+					}
+					else {
+						error("Cannot process 2FA selection page", page);
+					}
+					page = form.getInputByValue("OK").click();
+					dump(page);
+				}
+				catch (ElementNotFoundException e) {
+					error("Cannot process 2FA selection page", e, page);
+				}
+			}
+
+			if (testHtmlPage(
+						page,
+						hpage
+						-> hpage.getTitleText().equals("Login - Oracle Access Management 11g")
+						&& hpage.querySelector("label[for='username']") != null
+						&& hpage.querySelector("label[for='username']").asNormalizedText()
+										.equals("Enter One Time Pin:"))) {
+				progress("Processing 2FA entry page...");
+				String prompt;
+				if (secondFAType.equals(SecondFAType.TOTP)) {
+					prompt = "TOTP: ";
+				}
+				else if (secondFAType.equals(SecondFAType.SMS)) {
+					prompt = "SMS PIN: ";
+				}
+				else {
+					prompt = null;
+					error("Cannot process 2FA entry page", page);
+				}
+				String otp = readLine(prompt);
+				try {
+					HtmlPage hpage = (HtmlPage)page;
+					HtmlForm form = hpage.getFormByName("loginForm");
+					form.getInputByName("passcode").type(otp);
+					page = form.getInputByValue("Login").click();
+					dump(page);
+				}
+				catch (ElementNotFoundException e) {
+					error("Cannot process 2FA entry page", e, page);
+				}
+			}
+		}
+
+		//-----------------------------------
+		// IDCS-based authentication
+		//
+		// This one sort of sucks, since it heavily uses JavaScript,
+		// in particular also to modify pages in-place.  So we have
+		// to use the timeout-based method testHtmlPage to do the
+		// equivalent of staring at the screen and wait until these
+		// pages get ready for entering user name or password or
+		// whatnot.
+		//-----------------------------------
+
+		if (authMeths.contains(AuthMeth.IDCS) &&
+				testHtmlPage(
+					page,
+					hpage
+					-> hpage.getFirstByXPath("//form[@name='idcs-clp-signin-idp-redirect-form']") != null)) {
+			DomNode[] input  = { null };
+			DomNode[] button = { null };
+
+			progress("Processing IDCS user page...");
+			if (testHtmlPage(
+						page,
+						hpage
+						-> hpage.getTitleText().equals("Sign in to Oracle")
+						&& (input[0] = hpage.<DomNode>getFirstByXPath(
+									"//input[@id='idcs-signin-basic-signin-form-username']")) != null
+						&& input[0] instanceof HtmlInput
+						&& (button[0] = hpage.<DomNode>getFirstByXPath(
+									"//oj-button[@id='idcs-signin-basic-signin-form-submit']")) != null
+						&& (button[0] = button[0].<DomNode>getFirstByXPath(".//button")) != null
+						&& button[0] instanceof HtmlButton,
+						20, 500, webClient)) {
+				((HtmlInput)input[0]).type(user);
+				page = ((HtmlButton)button[0]).click();
+				dump(page);
+			}
+			else
+				error("Cannot process IDCS user page", page);
+
+			progress("Processing IDCS password page...");
+			if (testHtmlPage(
+						page,
+						hpage
+						-> hpage.getTitleText().equals("Sign in to Oracle")
+						&& (input[0] = hpage.<DomNode>getFirstByXPath(
+									"//input[@id='idcs-auth-pwd-input|input']")) != null
+						&& input[0] instanceof HtmlInput
+						&& (button[0] = hpage.<DomNode>getFirstByXPath(
+									"//oj-button[@id='idcs-mfa-mfa-auth-user-password-submit-button']")) != null
+						&& (button[0] = button[0].<DomNode>getFirstByXPath(".//button")) != null
+						&& button[0] instanceof HtmlButton,
+						20, 500, webClient)) {
+				((HtmlInput)input[0]).type(password);
+				page = ((HtmlButton)button[0]).click();
+				dump(page);
+			}
+			else
+				error("Cannot process IDCS password page", page);
+
+			// wait for an MFA page to turn up.  If it does not turn
+			// up, wait further for the login page.  If it does turn
+			// up, also wait for the login page, but much longer, since
+			// the user has to approve the authentication attempt with
+			// OMA push on some secondary device.
+			int tries;
+			int waitMillis;
+			if (testHtmlPage(
+						page,
+						hpage
+						-> hpage.getTitleText().equals("Sign in to Oracle")
+						&& hpage.<DomNode>getFirstByXPath("//oj-idaas-custom-text[contains(@value,'mfa.auth.push.notification-approval-message')]") != null,
+						20, 500, webClient)) {
+				progress("Processing IDCS MFA page...");
+				tries = 60;
+				waitMillis = 2000;
+			}
+			else {
+				tries = 30;
+				waitMillis = 1000;
+			}
+			for (int i = 0; i < tries; i++) {
+				webClient.waitForBackgroundJavaScript(waitMillis);
+				page = page.getEnclosingWindow().getEnclosedPage();
+				String content;
+				if (page instanceof TextPage &&
+						(content = ((TextPage)page).getContent()) != null &&
+						(content.matches(LOGIN_PAGE_REGEX)))
+					break;
+			}
+			dump(page);
+		}
+
+		// ensure we ended up on the login page
+		String content = null;
+		if (page instanceof TextPage &&
+				(content = ((TextPage)page).getContent()) != null &&
+				(content.matches(LOGIN_PAGE_REGEX)))
+			;																					// no-op
+		else if (page instanceof HtmlPage) {
+			HtmlPage hpage = (HtmlPage)page;
+			error("Cannot process unexpected page \"%s\" - login failed?",
+						hpage, hpage.getTitleText());
+		}
+		else
+			error("Cannot process unexpected page - login failed?", page);
+
+		// restore the previous credentials provider to not set any
+		// more basic authentication headers
+		webClient.setCredentialsProvider(pcp);
+	}
+
+	//-----------------------------------------------------------------
+	// download and friends
+	//-----------------------------------------------------------------
+
+	// user agent to use for basic authentication.  Only when we
+	// masquerade as wget MOS would accept basic authentication as
+	// authentication method.
+	private final static String BASIC_USER_AGENT = "Wget/1.21.3";
+
+	// short-hands for XPathConstants
+	private final static QName XPC_STRING  = XPathConstants.STRING;
+	private final static QName XPC_NODE    = XPathConstants.NODE;
+	private final static QName XPC_NODESET = XPathConstants.NODESET;
+
+	// XPath expression to search for errors
+	private final static String RESULT_ERROR_XPE  = "/results/error";
+
+	// XPath expression to search for downloadable files
+	private final static String DOWNLOAD_FILE_XPE = "/results/patch/files/file";
+
+	// ensures that the specified page contains MOS search results,
+	// errors out otherwise
+	private static void assertResultPage(Page page) throws ExitException
+	{
+		String content;
+		if (page instanceof TextPage &&
+				(content = ((TextPage)page).getContent()) != null &&
+				(content.startsWith("<results>") ||
+				 content.startsWith("<results ")))
+			;																					// no-op
+		else if (page instanceof HtmlPage) {
+			HtmlPage hpage = (HtmlPage)page;
+			error("Cannot process unexpected page \"%s\"",
+						hpage, hpage.getTitleText());
+		}
+		else
+			error("Cannot process unexpected page", page);
+	}
 
 	public static void download() throws Exception {
 		List<DownloadFile> downloads = new ArrayList<>();
 
-		// force english content since we identify login progress by
-		// (localized) content
+		// force english content since we identify page elements also
+		// by (localized) content
 		BrowserVersion.BrowserVersionBuilder browserVersionBuilder =
 			new BrowserVersion.BrowserVersionBuilder(BrowserVersion.FIREFOX);
-		browserVersionBuilder
-			.setUserAgent(USER_AGENT)
-			.setBrowserLanguage("en-US")
-			.setAcceptLanguageHeader("en-US");
+		if (authMeths.contains(AuthMeth.Basic))
+			browserVersionBuilder.setUserAgent(BASIC_USER_AGENT);
+		browserVersionBuilder.setBrowserLanguage("en-US");
+		browserVersionBuilder.setAcceptLanguageHeader("en-US");
 
 		// determine request-response log file
 		File rrLogFile;
@@ -437,11 +781,12 @@ public class OraclePatchDownloader {
 			webClient.getOptions().setJavaScriptEnabled(true);
 			webClient.getOptions().setTempFileDirectory(tempdir);
 
-			// unconditionally use basic authentication.  See issue
-			// #12.
-			DefaultCredentialsProvider creds = new DefaultCredentialsProvider();
-			creds.addCredentials(user, password.toCharArray());
-			webClient.setCredentialsProvider(creds);
+			// disable throwing of JavaScript errors, just in case.
+			// Currently, the IDCS-based authentication method can
+			// throw some JavaScript errors, but it seems that these
+			// already are caught by HtmlUnit and logged without being
+			// rethrown.  Regardless of this setting, actually.
+			webClient.getOptions().setThrowExceptionOnScriptError(false);
 
 			// set a custom web connection wrapper to be able to log
 			// requests and their responses
@@ -458,10 +803,17 @@ public class OraclePatchDownloader {
 			});
 
 			Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
-			// some OAM villains try to set invalid cookies - silence
-			// the corresponding org.apache.http.client warnings
-			Logger.getLogger("org.apache.http.client.protocol.ResponseProcessCookies")
-				.setLevel(Level.SEVERE);
+			// silence org.apache.http.client warnings issued when some
+			// OAM villains try to set invalid cookies
+			if (authMeths.contains(AuthMeth.Legacy))
+				Logger.getLogger("org.apache.http.client.protocol.ResponseProcessCookies")
+					.setLevel(Level.SEVERE);
+			// suppress logging of JavaScript errors potentially thrown
+			// by the IDCS-based authentication method unless in debug
+			// mode
+			if (authMeths.contains(AuthMeth.IDCS) && ! debugMode)
+				Logger.getLogger("org.htmlunit.javascript.DefaultJavaScriptErrorListener")
+					.setLevel(Level.OFF);
 
 			// prepare for parsing and processing XML
 			DocumentBuilder xmlparser =
@@ -470,208 +822,75 @@ public class OraclePatchDownloader {
 			XPathExpression errorXPE  = xpath.compile(RESULT_ERROR_XPE);
 			XPathExpression dlfileXPE = xpath.compile(DOWNLOAD_FILE_XPE);
 
-			// maintain both abstract and HTML pages in sync.  Why?
-			//
-			// Because ultimately we want to fetch XML content provided
-			// by MOS, which is protected by Oracle's login sqeuence.
-			// Accordingly, we have to handle a sequence of HTML pages
-			// of varying length for the login, all pages instances of
-			// HtmlPage, which is concluded by the final XML content as
-			// an instance of a TextPage.
-			//
-			// Therefore we handle the separate steps of the login
-			// sequence with the following pattern:
-			//
-			//   if (page instanceof HtmlPage &&
-			//       (hpage = (HtmlPage)page) != null &&
-			//       <tests on hpage>) {
-			//     [...]
-			//     page = <operate on hpage>;
-			//     dump(page);
-			//   }
-			Page page = null;
-			HtmlPage hpage = null;
+			// authenticate to MOS.  Assume that after this call all
+			// following pages fetched from MOS contain actual search
+			// results.
+			authenticate(webClient);
 
 			for (String patch : patchList) {
 				if (isPatchDownloaded(patch))
 					continue;
-				page = webClient.getPage(getQueryUrl(patch));
+
+				// fetch the search result page and assert that it
+				// actually contains search results
+				Page page = webClient.getPage(getQueryUrl(patch));
 				dump(page);
+				assertResultPage(page);
 
-				// A short overview on how HtmlUnit methods react when
-				// some element is absent:
-				//
-				// DomElement.getAttribute:     returns ATTRIBUTE_NOT_DEFINED
-				// DomNode.getByXPath:          returns empty list
-				// DomNode.getFirstByXPath:     returns null
-				// DomNode.querySelector:       returns null
-				// HtmlPage.getElementById:     returns null
-				// HtmlPage.getElementsById:    returns empty list
-				// HtmlPage.getFormByName:      throws ENFE
-				// HtmlPage.getHtmlElementById: throws ENFE
-				// HtmlForm.getInputByName:     throws ENFE
-				// HtmlForm.getInputByValue:    throws ENFE
+				progress("Processing search results for patch \"%s\"...", patch);
 
-				if (page instanceof HtmlPage &&
-						(hpage = (HtmlPage)page) != null &&
-						hpage.getTitleText().equals("Oracle Login - Single Sign On")) {
-					progress("Processing login page...");
-					try {
-						HtmlForm form = hpage.getFormByName("LoginForm");
-						form.getInputByName("ssousername").type(user);
-						form.getInputByName("password").type(password);
-						page = hpage.getHtmlElementById("signin_button").click();
-						dump(page);
-					}
-					catch (ElementNotFoundException e) {
-						error("Cannot process login page", e, page);
-					}
-				}
+				Document result =
+					xmlparser.parse(
+						new InputSource(
+							new StringReader(((TextPage)page).getContent())));
 
-				if (page instanceof HtmlPage &&
-						(hpage = (HtmlPage)page) != null &&
-						hpage.getTitleText().equals("Login - Oracle Access Management 11g") &&
-						hpage.getElementById("loginForm") != null &&
-						hpage.getElementById("loginForm").asNormalizedText()
-								 .indexOf("Please choose your preferred method") >= 0) {
-					progress("Processing 2FA selection page...");
-					try {
-						HtmlForm form = hpage.getFormByName("loginForm");
-						if (secondFAType.equals(SecondFAType.Default)) {
-							// determine the default 2FA method.  To avoid an
-							// exception when one of the methods is not
-							// available, protect the calls to ENFE-throwing
-							// method getInputByValue() by equivalent calls
-							// to method getFirstByXPath().
-							try {
-								if ((form.getFirstByXPath(".//input[@type='radio'][@value='Totp']") != null) &&
-										((HtmlRadioButtonInput)form.getInputByValue("Totp")).isChecked()) {
-									secondFAType = SecondFAType.TOTP;
-								}
-								else if ((form.getFirstByXPath(".//input[@type='radio'][@value='Sms']") != null) &&
-												 ((HtmlRadioButtonInput)form.getInputByValue("Sms")).isChecked()) {
-									secondFAType = SecondFAType.SMS;
-								}
-								else {
-									error("Cannot process 2FA selection page", page);
-								}
-							}
-							catch (ClassCastException e) {
-								error("Cannot process 2FA selection page", e, page);
+				// check for search errors
+				Node error;
+				if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null)
+					error("Cannot process search error \"%s\"",
+								page, error.getTextContent().trim().replaceAll("\\s+", " "));
+
+				NodeList dlfiles = (NodeList)dlfileXPE.evaluate(result, XPC_NODESET);
+				for (int i = 0; i < dlfiles.getLength(); i++) {
+					Node dlfile = dlfiles.item(i);
+
+					// extract parts of the download file node
+					String name = (String)xpath.evaluate("./name/text()", dlfile, XPC_STRING);
+					String size = (String)xpath.evaluate("./size/text()", dlfile, XPC_STRING);
+					String host = (String)xpath.evaluate("./download_url/@host", dlfile, XPC_STRING);
+					String path = (String)xpath.evaluate("./download_url/text()", dlfile, XPC_STRING);
+					String sha256 =
+						(String)xpath.evaluate("./digest[@type='SHA-256']/text()", dlfile, XPC_STRING);
+
+					// verify them at least to some extent
+					if (name == null || name.length() == 0)
+						error("Cannot process download file name \"%s\"", page, name);
+					if (size == null || ! size.matches("\\d+"))
+						error("Cannot process download file size \"%s\"", page, size);
+					if (host == null || ! host.startsWith("https://"))
+						error("Cannot process download file host \"%s\"", page, host);
+					if (path == null || path.length() == 0)
+						error("Cannot process download file path \"%s\"", page, path);
+					if (sha256 == null || ! sha256.matches("\\p{XDigit}{64}"))
+						error("Cannot process download file sha256 \"%s\"", page, sha256);
+
+					// create a new download file and check its name
+					// against the user-specified patterns
+					DownloadFile dlf =
+						new DownloadFile(name, Integer.parseInt(size), host + path, sha256);
+					if (patternList.size() > 0) {
+						for (Pattern pattern : patternList) {
+							if (pattern.matcher(name).matches()) {
+								downloads.add(dlf);
+								break;
 							}
 						}
-						else if (secondFAType.equals(SecondFAType.TOTP)) {
-							form.getInputByValue("Totp").click();
-						}
-						else if (secondFAType.equals(SecondFAType.SMS)) {
-							form.getInputByValue("Sms").click();
-						}
-						else {
-							error("Cannot process 2FA selection page", page);
-						}
-						page = form.getInputByValue("OK").click();
-						dump(page);
 					}
-					catch (ElementNotFoundException e) {
-						error("Cannot process 2FA selection page", e, page);
-					}
+					else
+						downloads.add(dlf);
 				}
 
-				if (page instanceof HtmlPage &&
-						(hpage = (HtmlPage)page) != null &&
-						hpage.getTitleText().equals("Login - Oracle Access Management 11g") &&
-						hpage.querySelector("label[for='username']") != null &&
-						hpage.querySelector("label[for='username']").asNormalizedText()
-								 .equals("Enter One Time Pin:")) {
-					progress("Processing 2FA entry page...");
-					String prompt;
-					if (secondFAType.equals(SecondFAType.TOTP)) {
-						prompt = "TOTP: ";
-					}
-					else if (secondFAType.equals(SecondFAType.SMS)) {
-						prompt = "SMS PIN: ";
-					}
-					else {
-						prompt = null;
-						error("Cannot process 2FA entry page", page);
-					}
-					String otp = readLine(prompt);
-					try {
-						HtmlForm form = hpage.getFormByName("loginForm");
-						form.getInputByName("passcode").type(otp);
-						page = form.getInputByValue("Login").click();
-						dump(page);
-					}
-					catch (ElementNotFoundException e) {
-						error("Cannot process 2FA entry page", e, page);
-					}
-				}
-
-				// ensure we ended up on the patch search result XML
-				String content;
-				if (page instanceof TextPage &&
-						(content = ((TextPage)page).getContent()) != null &&
-						(content.startsWith("<results>") ||
-						 content.startsWith("<results "))) {
-					progress("Processing search results for patch \"%s\"...", patch);
-
-					Document result =
-						xmlparser.parse(new InputSource(new StringReader(content)));
-
-					// check for search errors
-					Node error;
-					if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null)
-						error("Cannot process search error \"%s\"",
-									page, error.getTextContent().trim().replaceAll("\\s+", " "));
-
-					NodeList dlfiles = (NodeList)dlfileXPE.evaluate(result, XPC_NODESET);
-					for (int i = 0; i < dlfiles.getLength(); i++) {
-						Node dlfile = dlfiles.item(i);
-
-						// extract parts of the download file node
-						String name = (String)xpath.evaluate("./name/text()", dlfile, XPC_STRING);
-						String size = (String)xpath.evaluate("./size/text()", dlfile, XPC_STRING);
-						String host = (String)xpath.evaluate("./download_url/@host", dlfile, XPC_STRING);
-						String path = (String)xpath.evaluate("./download_url/text()", dlfile, XPC_STRING);
-						String sha256 =
-							(String)xpath.evaluate("./digest[@type='SHA-256']/text()", dlfile, XPC_STRING);
-
-						// verify them at least to some extent
-						if (name == null || name.length() == 0)
-							error("Cannot process download file name \"%s\"", page, name);
-						if (size == null || ! size.matches("\\d+"))
-							error("Cannot process download file size \"%s\"", page, size);
-						if (host == null || ! host.startsWith("https://"))
-							error("Cannot process download file host \"%s\"", page, host);
-						if (path == null || path.length() == 0)
-							error("Cannot process download file path \"%s\"", page, path);
-						if (sha256 == null || ! sha256.matches("\\p{XDigit}{64}"))
-							error("Cannot process download file sha256 \"%s\"", page, sha256);
-
-						// create a new download file and check its name
-						// against the user-specified patterns
-						DownloadFile dlf =
-						  new DownloadFile(name, Integer.parseInt(size), host + path, sha256 );
-						if (patternList.size() > 0) {
-							for (Pattern pattern : patternList) {
-								if (pattern.matcher(name).matches()) {
-									downloads.add(dlf);
-									break;
-								}
-							}
-						}
-						else
-							downloads.add(dlf);
-					}
-
-					xmlparser.reset();
-				}
-				else if (page instanceof HtmlPage &&
-								 (hpage = (HtmlPage)page) != null)
-					error("Cannot process unexpected page \"%s\" - login failed?",
-								hpage, hpage.getTitleText());
-				else
-					error("Cannot process unexpected page - login failed?", page);
+				xmlparser.reset();
 			}
 
 			// give some feedback if there is nothing to do
@@ -714,6 +933,15 @@ public class OraclePatchDownloader {
 	// main method and friends
 	//-----------------------------------------------------------------
 
+	// use integer option values smaller than 32 for options which
+	// should have only the long form
+	private final static int OPT_AUTHMETH = 0;
+
+	// regex that matches a line in a patch file.  The first
+	// subgroup provides the patch number.
+	private final static String  PATCH_FILE_LINE_REGEX   = "^p?(\\d{8,10}).*$";
+	private final static Pattern PATCH_FILE_LINE_PATTERN = Pattern.compile(PATCH_FILE_LINE_REGEX);
+
 	private static void help() {
 		System.out.println("Usage:");
 		System.out.println(" -h : --help        help text");
@@ -726,10 +954,11 @@ public class OraclePatchDownloader {
 		System.out.println("                    (e.g. \"p12345678\", \"12345678\", \"# comment\")");
 		System.out.println(" -q : --query |     list of platforms, releases, or languages");
 		System.out.println(" -t : --platforms   (e.g. \"226P\" for Linux x86-64, \"600000000063735R\"");
-		System.out.println("                    for OPatch 12.2.0.1.2 or \"4L\" for German (D))");
-		System.out.println("                    (e.g. \"226P\" for Linux x86-64 or \"4L\" for German (D))");
+		System.out.println("                    for OPatch 12.2.0.1.2, or \"4L\" for German (D))");
 		System.out.println(" -r : --regex       regex for file filter, multiple possible");
 		System.out.println("                    (e.g. \".*1900.*\")");
+		System.out.println("      --authmeth    MOS authentication method, one or more of \"Basic\",");
+		System.out.println("                    \"Legacy\", or \"IDCS\", default \"Basic,IDCS\"");
 		System.out.println(" -u : --user        email/userid");
 		System.out.println(" -p : --password    password (\"env:ENV_VAR\" to use password from env)");
 		System.out.println(" -T : --temp        temporary directory");
@@ -743,7 +972,6 @@ public class OraclePatchDownloader {
 
 	public static void main(String[] args) {
 
-		int c;
 		ArrayList<LongOpt> longopts = new ArrayList<>();
 		longopts.add( new LongOpt("help",      LongOpt.NO_ARGUMENT,       null, 'h') );
 		longopts.add( new LongOpt("debug",     LongOpt.NO_ARGUMENT,       null, 'D') );
@@ -754,6 +982,7 @@ public class OraclePatchDownloader {
 		longopts.add( new LongOpt("query",     LongOpt.REQUIRED_ARGUMENT, null, 'q') );
 		longopts.add( new LongOpt("platforms", LongOpt.REQUIRED_ARGUMENT, null, 't') );
 		longopts.add( new LongOpt("regex",     LongOpt.REQUIRED_ARGUMENT, null, 'r') );
+		longopts.add( new LongOpt("authmeth",  LongOpt.REQUIRED_ARGUMENT, null, OPT_AUTHMETH) );
 		longopts.add( new LongOpt("user",      LongOpt.REQUIRED_ARGUMENT, null, 'u') );
 		longopts.add( new LongOpt("password",  LongOpt.REQUIRED_ARGUMENT, null, 'p') );
 		longopts.add( new LongOpt("2fatype",   LongOpt.REQUIRED_ARGUMENT, null, '2') );
@@ -768,6 +997,7 @@ public class OraclePatchDownloader {
 		boolean tempdirDelete = false;
 
 		List<String> queryList = new ArrayList<>();
+		int c;
 		while ((c = g.getopt()) != -1) {
 			String arg = g.getOptarg();
 
@@ -841,6 +1071,20 @@ public class OraclePatchDownloader {
 				}
 				break;
 
+			case OPT_AUTHMETH:
+				authMeths = new HashSet<>();
+				for (String authMeth : arg.split("[,;]+")) {
+					try {
+						authMeths.add(AuthMeth.valueOf(authMeth));
+					}
+					catch (IllegalArgumentException e) {
+						usage("Invalid authentication method \"%s\" specified", authMeth);
+					}
+				}
+				if (authMeths.size() == 0)
+					usage("No authentication methods specified");
+				break;
+
 			case 'u':
 				user = arg;
 				break;
@@ -861,7 +1105,7 @@ public class OraclePatchDownloader {
 					secondFAType = SecondFAType.valueOf(arg);
 				}
 				catch (IllegalArgumentException e) {
-					usage("Invalid 2FA type \"%s\"", arg);
+					usage("Invalid 2FA type \"%s\" specified", arg);
 				}
 				break;
 
@@ -891,7 +1135,7 @@ public class OraclePatchDownloader {
 				usage("Invalid platforms or query \"%s\"specified", query);
 
 			// determine query id and term
-			int qlmo = query.length() - 1;            // query-lenght-minus-one
+			int qlmo = query.length() - 1;            // query-length-minus-one
 			String qid = query.substring(0, qlmo);
 			String qt  = null;
 			switch (query.charAt(qlmo)) {
