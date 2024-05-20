@@ -1017,20 +1017,20 @@ public class OraclePatchDownloader {
 
 		ArrayList<LongOpt> longopts = new ArrayList<>();
 		// @formatter:off
-		longopts.add( new LongOpt("help",      LongOpt.NO_ARGUMENT,       null, 'h') );
-		longopts.add( new LongOpt("debug",     LongOpt.NO_ARGUMENT,       null, 'D') );
-		longopts.add( new LongOpt("quiet",     LongOpt.NO_ARGUMENT,       null, 'Q') );
-		longopts.add( new LongOpt("directory", LongOpt.REQUIRED_ARGUMENT, null, 'd') );
-		longopts.add( new LongOpt("patches",   LongOpt.REQUIRED_ARGUMENT, null, 'x') );
-		longopts.add( new LongOpt("patchfile", LongOpt.REQUIRED_ARGUMENT, null, 'f') );
-		longopts.add( new LongOpt("query",     LongOpt.REQUIRED_ARGUMENT, null, 'q') );
-		longopts.add( new LongOpt("platforms", LongOpt.REQUIRED_ARGUMENT, null, 't') );
-		longopts.add( new LongOpt("regex",     LongOpt.REQUIRED_ARGUMENT, null, 'r') );
-		longopts.add( new LongOpt("authmeth",  LongOpt.REQUIRED_ARGUMENT, null, OPT_AUTHMETH) );
-		longopts.add( new LongOpt("user",      LongOpt.REQUIRED_ARGUMENT, null, 'u') );
-		longopts.add( new LongOpt("password",  LongOpt.REQUIRED_ARGUMENT, null, 'p') );
-		longopts.add( new LongOpt("2fatype",   LongOpt.REQUIRED_ARGUMENT, null, '2') );
-		longopts.add( new LongOpt("temp",      LongOpt.REQUIRED_ARGUMENT, null, 'T') );
+		longopts.add(new LongOpt("help",      LongOpt.NO_ARGUMENT,       null, 'h'));
+		longopts.add(new LongOpt("debug",     LongOpt.NO_ARGUMENT,       null, 'D'));
+		longopts.add(new LongOpt("quiet",     LongOpt.NO_ARGUMENT,       null, 'Q'));
+		longopts.add(new LongOpt("directory", LongOpt.REQUIRED_ARGUMENT, null, 'd'));
+		longopts.add(new LongOpt("patches",   LongOpt.REQUIRED_ARGUMENT, null, 'x'));
+		longopts.add(new LongOpt("patchfile", LongOpt.REQUIRED_ARGUMENT, null, 'f'));
+		longopts.add(new LongOpt("query",     LongOpt.REQUIRED_ARGUMENT, null, 'q'));
+		longopts.add(new LongOpt("platforms", LongOpt.REQUIRED_ARGUMENT, null, 't'));
+		longopts.add(new LongOpt("regex",     LongOpt.REQUIRED_ARGUMENT, null, 'r'));
+		longopts.add(new LongOpt("authmeth",  LongOpt.REQUIRED_ARGUMENT, null, OPT_AUTHMETH));
+		longopts.add(new LongOpt("user",      LongOpt.REQUIRED_ARGUMENT, null, 'u'));
+		longopts.add(new LongOpt("password",  LongOpt.REQUIRED_ARGUMENT, null, 'p'));
+		longopts.add(new LongOpt("2fatype",   LongOpt.REQUIRED_ARGUMENT, null, '2'));
+		longopts.add(new LongOpt("temp",      LongOpt.REQUIRED_ARGUMENT, null, 'T'));
 		// @formatter:on
 
 		Getopt g = new Getopt("OraclePatchDownoader", args,
