@@ -2,6 +2,7 @@ package li.h35.OraclePatchDownloader;
 
 /*
  * Copyright (c) 2024 H35 GmbH
+ * Copyright (c) 2024 Jens Schmidt
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -98,13 +99,14 @@ public class OraclePatchDownloader {
 	private static class DownloadFile {
 		private final String name;
 
-		private final int size;
+		@SuppressWarnings("unused")
+		private final long size;
 
 		private final String url;
 
 		private final String sha256;
 
-		private DownloadFile(String name, int size, String url, String sha256) {
+		private DownloadFile(String name, long size, String url, String sha256) {
 			this.name   = name;
 			this.size   = size;
 			this.url    = url;
@@ -176,6 +178,8 @@ public class OraclePatchDownloader {
 	// progress(), respectively.
 
 	private static class ExitException extends Exception {
+		private final static long serialVersionUID = 1L;
+
 		public final int exitval;
 
 		public ExitException(int exitval) {
@@ -198,6 +202,7 @@ public class OraclePatchDownloader {
 		error(format, (Exception)null, p, args);
 	}
 
+	@SuppressWarnings("unused")
 	private static void error(String format, Exception e, Object... args)
 		throws ExitException {
 		error(format, e, (Page)null, args);
@@ -208,19 +213,38 @@ public class OraclePatchDownloader {
 		error(format, (Exception)null, (Page)null, args);
 	}
 
-	private static void warn(String format, Exception e, Object... args) {
+	private static void warn(String format, Exception e, Page p, Object... args) {
 		System.err.println(format(format, args));
 		if (e != null)
 			e.printStackTrace(System.err);
+		if (p != null && debugMode)
+			dumpInternal(p, true);
+	}
+
+	private static void warn(String format, Page p, Object... args) {
+		warn(format, (Exception)null, p, args);
+	}
+
+	private static void warn(String format, Exception e, Object... args) {
+		warn(format, e, (Page)null, args);
 	}
 
 	private static void warn(String format, Object... args) {
-		warn(format, (Exception)null, args);
+		warn(format, (Exception)null, (Page)null, args);
+	}
+
+	private static void warn() {
+		System.err.println();
 	}
 
 	private static void progress(String format, Object... args) {
 		if (! quietMode)
 			System.err.println(format(format, args));
+	}
+
+	private static void progress() {
+		if (! quietMode)
+			System.err.println();
 	}
 
 	private static void result(String format, Object... args) {
@@ -384,6 +408,7 @@ public class OraclePatchDownloader {
 
 	private static boolean isPatchDownloaded(String patch) {
 		String[] list = directory.list(new FilenameFilter() {
+			@Override
 			public boolean accept(File dir, String name) {
 				return name.startsWith("p" + patch) && name.endsWith(".zip");
 			}
@@ -752,6 +777,7 @@ public class OraclePatchDownloader {
 
 	public static void download() throws Exception {
 		List<DownloadFile> downloads = new ArrayList<>();
+		List<String> searchErrorList = new ArrayList<>();
 
 		// force english content since we identify page elements also
 		// by (localized) content
@@ -844,23 +870,29 @@ public class OraclePatchDownloader {
 						new InputSource(
 							new StringReader(((TextPage)page).getContent())));
 
-				// check for search errors
+				// check for search errors.  For now only warn about
+				// them, but throw an error after we have completed (or
+				// not) downloading any remaining patches.
 				Node error;
-				if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null)
-					error("Cannot process search error \"%s\"",
-								page, error.getTextContent().trim().replaceAll("\\s+", " "));
+				if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null) {
+					warn("Cannot process search error \"%s\"",
+					     page, error.getTextContent().trim().replaceAll("\\s+", " "));
+					searchErrorList.add(patch);
+				}
 
 				NodeList dlfiles = (NodeList)dlfileXPE.evaluate(result, XPC_NODESET);
 				for (int i = 0; i < dlfiles.getLength(); i++) {
 					Node dlfile = dlfiles.item(i);
 
 					// extract parts of the download file node
-					String name = (String)xpath.evaluate("./name/text()", dlfile, XPC_STRING);
-					String size = (String)xpath.evaluate("./size/text()", dlfile, XPC_STRING);
-					String host = (String)xpath.evaluate("./download_url/@host", dlfile, XPC_STRING);
+					// @formatter:off
+					String name = (String)xpath.evaluate("./name/text()",         dlfile, XPC_STRING);
+					String size = (String)xpath.evaluate("./size/text()",         dlfile, XPC_STRING);
+					String host = (String)xpath.evaluate("./download_url/@host",  dlfile, XPC_STRING);
 					String path = (String)xpath.evaluate("./download_url/text()", dlfile, XPC_STRING);
 					String sha256 =
-						(String)xpath.evaluate("./digest[@type='SHA-256']/text()", dlfile, XPC_STRING);
+					  (String)xpath.evaluate("./digest[@type='SHA-256']/text()",  dlfile, XPC_STRING);
+					// @formatter:on
 
 					// verify them at least to some extent
 					if (name == null || name.length() == 0)
@@ -877,7 +909,7 @@ public class OraclePatchDownloader {
 					// create a new download file and check its name
 					// against the user-specified patterns
 					DownloadFile dlf =
-						new DownloadFile(name, Integer.parseInt(size), host + path, sha256);
+						new DownloadFile(name, Long.parseLong(size), host + path, sha256);
 					if (patternList.size() > 0) {
 						for (Pattern pattern : patternList) {
 							if (pattern.matcher(name).matches()) {
@@ -919,12 +951,23 @@ public class OraclePatchDownloader {
 				}
 			}
 
-			// dump checksums if non-silent
-			if (! quietMode) {
-				progress("");
+			// dump checksums if there were any downloads and if we run
+			// non-silent
+			if (downloads.size() > 0 && ! quietMode) {
+				progress();
 				progress("SHA-256 checksums as provided by MOS:");
 				for (DownloadFile dlf : downloads)
 					result("%s  %s", dlf.sha256, dlf.name);
+			}
+
+			// dump information on search errors and error out if there
+			// were any
+			if (searchErrorList.size() > 0) {
+				warn();
+				warn("Search errors occurred for the following patches:");
+				for (String patch : searchErrorList)
+					warn("  %s", patch);
+				error("Cannot process previous search errors");
 			}
 		}
 	}
@@ -973,6 +1016,7 @@ public class OraclePatchDownloader {
 	public static void main(String[] args) {
 
 		ArrayList<LongOpt> longopts = new ArrayList<>();
+		// @formatter:off
 		longopts.add( new LongOpt("help",      LongOpt.NO_ARGUMENT,       null, 'h') );
 		longopts.add( new LongOpt("debug",     LongOpt.NO_ARGUMENT,       null, 'D') );
 		longopts.add( new LongOpt("quiet",     LongOpt.NO_ARGUMENT,       null, 'Q') );
@@ -987,6 +1031,7 @@ public class OraclePatchDownloader {
 		longopts.add( new LongOpt("password",  LongOpt.REQUIRED_ARGUMENT, null, 'p') );
 		longopts.add( new LongOpt("2fatype",   LongOpt.REQUIRED_ARGUMENT, null, '2') );
 		longopts.add( new LongOpt("temp",      LongOpt.REQUIRED_ARGUMENT, null, 'T') );
+		// @formatter:on
 
 		Getopt g = new Getopt("OraclePatchDownoader", args,
 													"hDQd:x:f:q:t:r:u:p:2:T:",
@@ -1138,11 +1183,13 @@ public class OraclePatchDownloader {
 			int qlmo = query.length() - 1;            // query-length-minus-one
 			String qid = query.substring(0, qlmo);
 			String qt  = null;
+			// @formatter:off
 			switch (query.charAt(qlmo)) {
 			case 'L': qt = "language"; break;
 			case 'P': qt = "platform"; break;
 			case 'R': qt = "release";  break;
 			}
+			// @formatter:on
 
 			// associate query id to query term in the map
 			List<String> qids;
