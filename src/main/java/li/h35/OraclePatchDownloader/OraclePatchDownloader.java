@@ -198,7 +198,6 @@ public class OraclePatchDownloader {
 		error(format, (Exception)null, p, args);
 	}
 
-	@SuppressWarnings("unused")
 	private static void error(String format, Exception e, Object... args)
 	  throws ExitException {
 		error(format, e, (Page)null, args);
@@ -621,24 +620,35 @@ public class OraclePatchDownloader {
 		// equivalent of staring at the screen and wait until these
 		// pages get ready for entering user name or password or
 		// whatnot.
+		//
+		// Use final local constants for all these lengthy XPath
+		// expressions, mainly to keep the overall line length
+		// under control.
 		//-----------------------------------
 
+		final String XP_REDIR_FORM =
+		  "//form[@name='idcs-clp-signin-idp-redirect-form']";
 		if (authMeths.contains(AuthMeth.IDCS) &&
 		    testHtmlPage(page,
-		                 hpage -> hpage.getFirstByXPath("//form[@name='idcs-clp-signin-idp-redirect-form']") != null)) {
+		                 hpage -> hpage.getFirstByXPath(XP_REDIR_FORM) != null)) {
 			DomNode[] input = { null };
 			DomNode[] button = { null };
 
+			final String XP_INPUT_USER =
+			  "//input[@id='idcs-signin-basic-signin-form-username']";
+			final String XP_BUTTON_USER =
+			  "//oj-button[@id='idcs-signin-basic-signin-form-submit']";
 			progress("Processing IDCS user page...");
-			if (testHtmlPage(page,
+			if (testHtmlPage(// @formatter:off
+			                 page,
 			                 hpage -> hpage.getTitleText().equals("Sign in to Oracle")
-			                          && (input[0] = hpage.<DomNode>getFirstByXPath("//input[@id='idcs-signin-basic-signin-form-username']")) != null
+			                          && (input[0] = hpage.<DomNode>getFirstByXPath(XP_INPUT_USER)) != null
 			                          && input[0] instanceof HtmlInput
-			                          && (button[0] = hpage.<DomNode>getFirstByXPath("//oj-button[@id='idcs-signin-basic-signin-form-submit']")) != null
-			                          && (button[0] =
-			                            button[0].<DomNode>getFirstByXPath(".//button")) != null
+			                          && (button[0] = hpage.<DomNode>getFirstByXPath(XP_BUTTON_USER)) != null
+			                          && (button[0] = button[0].<DomNode>getFirstByXPath(".//button")) != null
 			                          && button[0] instanceof HtmlButton,
-			                 20, 500, webClient)) {
+			                 // @formatter:on
+			                 40, 500, webClient)) {
 				((HtmlInput)input[0]).type(user);
 				page = ((HtmlButton)button[0]).click();
 				dump(page);
@@ -646,16 +656,21 @@ public class OraclePatchDownloader {
 			else
 				error("Cannot process IDCS user page", page);
 
+			final String XP_INPUT_PASS =
+			  "//input[@id='idcs-auth-pwd-input|input']";
+			final String XP_BUTTON_PASS =
+			  "//oj-button[@id='idcs-mfa-mfa-auth-user-password-submit-button']";
 			progress("Processing IDCS password page...");
-			if (testHtmlPage(page,
+			if (testHtmlPage(// @formatter:off
+			                 page,
 			                 hpage -> hpage.getTitleText().equals("Sign in to Oracle")
-			                          && (input[0] = hpage.<DomNode>getFirstByXPath("//input[@id='idcs-auth-pwd-input|input']")) != null
+			                          && (input[0] = hpage.<DomNode>getFirstByXPath(XP_INPUT_PASS)) != null
 			                          && input[0] instanceof HtmlInput
-			                          && (button[0] = hpage.<DomNode>getFirstByXPath("//oj-button[@id='idcs-mfa-mfa-auth-user-password-submit-button']")) != null
-			                          && (button[0] =
-			                            button[0].<DomNode>getFirstByXPath(".//button")) != null
+			                          && (button[0] = hpage.<DomNode>getFirstByXPath(XP_BUTTON_PASS)) != null
+			                          && (button[0] = button[0].<DomNode>getFirstByXPath(".//button")) != null
 			                          && button[0] instanceof HtmlButton,
-			                 20, 500, webClient)) {
+			                 // @formatter:on
+			                 40, 500, webClient)) {
 				((HtmlInput)input[0]).type(password);
 				page = ((HtmlButton)button[0]).click();
 				dump(page);
@@ -668,12 +683,14 @@ public class OraclePatchDownloader {
 			// up, also wait for the login page, but much longer, since
 			// the user has to approve the authentication attempt with
 			// OMA push on some secondary device.
+			final String XP_MFA_APPROVAL =
+			  "//oj-idaas-custom-text[contains(@value,'mfa.auth.push.notification-approval-message')]";
 			int tries;
 			int waitMillis;
 			if (testHtmlPage(page,
 			                 hpage -> hpage.getTitleText().equals("Sign in to Oracle")
-			                          && hpage.<DomNode>getFirstByXPath("//oj-idaas-custom-text[contains(@value,'mfa.auth.push.notification-approval-message')]") != null,
-			                 20, 500, webClient)) {
+			                          && hpage.<DomNode>getFirstByXPath(XP_MFA_APPROVAL) != null,
+			                 40, 500, webClient)) {
 				progress("Processing IDCS MFA page...");
 				tries = 60;
 				waitMillis = 2000;
