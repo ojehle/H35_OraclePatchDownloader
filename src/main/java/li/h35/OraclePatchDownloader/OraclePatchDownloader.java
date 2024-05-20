@@ -2,6 +2,7 @@ package li.h35.OraclePatchDownloader;
 
 /*
  * Copyright (c) 2024 H35 GmbH
+ * Copyright (c) 2024 Jens Schmidt
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -250,6 +251,11 @@ public class OraclePatchDownloader {
 	private static void progress(String format, Object... args) {
 		if (! quietMode)
 			System.err.println(format(format, args));
+	}
+
+	private static void progress() {
+		if (! quietMode)
+			System.err.println();
 	}
 
 	private static void result(String format, Object... args) {
@@ -723,9 +729,10 @@ public class OraclePatchDownloader {
 				}
 			}
 
-			// dump checksums if non-silent
-			if (! quietMode) {
-				progress("");
+			// dump checksums if there were any downloads and if we run
+			// non-silent
+			if (downloads.size() > 0 && ! quietMode) {
+				progress();
 				progress("SHA-256 checksums as provided by MOS:");
 				for (DownloadFile dlf : downloads)
 					result("%s  %s", dlf.sha256, dlf.name);
