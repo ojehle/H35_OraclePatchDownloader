@@ -39,6 +39,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
+
 import javax.xml.namespace.QName;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -57,73 +62,72 @@ import org.htmlunit.UnexpectedPage;
 import org.htmlunit.WebClient;
 import org.htmlunit.WebRequest;
 import org.htmlunit.WebResponse;
+import org.htmlunit.html.DomElement;
+import org.htmlunit.html.HtmlElement;
 import org.htmlunit.html.HtmlForm;
+import org.htmlunit.html.HtmlInput;
 import org.htmlunit.html.HtmlPage;
 import org.htmlunit.html.HtmlRadioButtonInput;
+import org.htmlunit.html.HtmlTable;
+import org.htmlunit.html.HtmlTableCell;
+import org.htmlunit.html.HtmlTableRow;
 import org.htmlunit.util.NameValuePair;
 import org.htmlunit.util.WebConnectionWrapper;
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 
 import gnu.getopt.Getopt;
 import gnu.getopt.LongOpt;
 
 public class OraclePatchDownloader {
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// enums and inner classes
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
-	private static enum SecondFAType {
-		Default, TOTP, SMS, None
-	}
+	private static enum SecondFAType { Default, TOTP, SMS, None }
 
 	private static class DownloadFile {
 		private final String name;
 
-		@SuppressWarnings("unused")
-		private final long size;
+		private final int size;
 
 		private final String url;
 
 		private final String sha256;
 
-		private DownloadFile(String name, long size, String url, String sha256) {
-			this.name = name;
-			this.size = size;
-			this.url = url;
+		private DownloadFile(String name, int size, String url, String sha256) {
+			this.name   = name;
+			this.size   = size;
+			this.url    = url;
 			this.sha256 = sha256;
 		}
 	}
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// constants
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
-	// user-agent to use. When masquerading as wget, MOS accepts
+	// user-agent to use.  When masquerading as wget, MOS accepts
 	// basic authentication for patch searches and downloads.
 	private final static String USER_AGENT = "Wget/1.21.3";
 
 	// short-hands for XPathConstants
-	private final static QName XPC_STRING = XPathConstants.STRING;
-	private final static QName XPC_NODE = XPathConstants.NODE;
+	private final static QName XPC_STRING  = XPathConstants.STRING;
+	private final static QName XPC_NODE    = XPathConstants.NODE;
 	private final static QName XPC_NODESET = XPathConstants.NODESET;
 
-	// regex that matches a line in a patch file. The first
+	// regex that matches a line in a patch file.  The first
 	// subgroup provides the patch number.
-	private final static String PATCH_FILE_LINE_REGEX = "^p?(\\d{8,10}).*$";
+	private final static String  PATCH_FILE_LINE_REGEX   = "^p?(\\d{8,10}).*$";
 	private final static Pattern PATCH_FILE_LINE_PATTERN = Pattern.compile(PATCH_FILE_LINE_REGEX);
 
 	// XPath expression to search for errors
-	private final static String RESULT_ERROR_XPE = "/results/error";
+	private final static String RESULT_ERROR_XPE  = "/results/error";
 
 	// XPath expression to search for downloadable files
 	private final static String DOWNLOAD_FILE_XPE = "/results/patch/files/file";
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// "global" variables
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	private static boolean debugMode = false;
 	private static boolean quietMode = false;
@@ -134,15 +138,15 @@ public class OraclePatchDownloader {
 	private static String user = null;
 	// do not use a character array here plus some "burn after
 	// reading" processing, even if that is the general convention
-	// for handling passwords. The security gain does not seem to
+	// for handling passwords.  The security gain does not seem to
 	// justify the effort required to do so.
 	private static String password = null;
 	private static SecondFAType secondFAType = SecondFAType.Default;
 	private static File tempdir = null;
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// string formatting
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	// like String.format, but protects against format errors.
 	// This is to avoid exception handling resulting in exceptions,
@@ -150,7 +154,8 @@ public class OraclePatchDownloader {
 	private static String format(String format, Object... args) {
 		try {
 			return String.format(format, args);
-		} catch (IllegalFormatException e) {
+		}
+		catch (IllegalFormatException e) {
 			System.err.println("Cannot process format \"" + format + "\"");
 			e.printStackTrace(System.err);
 			StringBuffer result = new StringBuffer();
@@ -166,23 +171,22 @@ public class OraclePatchDownloader {
 		}
 	}
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// errors, warnings, progress
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	// Try to handle errors in this tool as follows:
 	//
 	// - Avoid using System.exit(), as that may circumvent cleanup;
 	// - Call method usage() in method main();
 	// - Call method error() in method download() and methods
-	// called from that;
+	//   called from that;
 	// - Throw a RuntimeException otherwise.
 	//
 	// To report warnings and progress use methods warn() and
 	// progress(), respectively.
 
 	private static class ExitException extends Exception {
-		private static final long serialVersionUID = 1L;
 		public final int exitval;
 
 		public ExitException(int exitval) {
@@ -190,7 +194,8 @@ public class OraclePatchDownloader {
 		}
 	}
 
-	private static void error(String format, Exception e, Page p, Object... args) throws ExitException {
+	private static void error(String format, Exception e, Page p, Object... args)
+		throws ExitException {
 		System.err.println(format(format, args));
 		if (e != null)
 			e.printStackTrace(System.err);
@@ -199,58 +204,56 @@ public class OraclePatchDownloader {
 		throw new ExitException(1);
 	}
 
-	private static void error(String format, Page p, Object... args) throws ExitException {
-		error(format, (Exception) null, p, args);
+	private static void error(String format, Page p, Object... args)
+		throws ExitException {
+		error(format, (Exception)null, p, args);
 	}
 
-	@SuppressWarnings("unused")
-	private static void error(String format, Exception e, Object... args) throws ExitException {
-		error(format, e, (Page) null, args);
+	private static void error(String format, Exception e, Object... args)
+		throws ExitException {
+		error(format, e, (Page)null, args);
 	}
 
-	private static void error(String format, Object... args) throws ExitException {
-		error(format, (Exception) null, (Page) null, args);
-	}
-
-	private static void warn(String format, Exception e, Page p, Object... args) {
-		System.err.println(format(format, args));
-		if (e != null)
-			e.printStackTrace(System.err);
-		if (p != null && debugMode)
-			dumpInternal(p, true);
-
+	private static void error(String format, Object... args)
+		throws ExitException {
+		error(format, (Exception)null, (Page)null, args);
 	}
 
 	private static void warn(String format, Exception e, Object... args) {
-		warn(format, (Exception) null, null, args);
+		System.err.println(format(format, args));
+		if (e != null)
+			e.printStackTrace(System.err);
 	}
 
 	private static void warn(String format, Object... args) {
-		warn(format, (Exception) null, args);
+		warn(format, (Exception)null, args);
 	}
 
 	private static void progress(String format, Object... args) {
-		if (!quietMode)
+		if (! quietMode)
 			System.err.println(format(format, args));
 	}
 
 	private static void result(String format, Object... args) {
-		if (!quietMode)
+		if (! quietMode)
 			System.out.println(format(format, args));
 	}
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// logging and dumping
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	private static void rrlog(PrintWriter rrLogWriter, WebRequest request) {
 		try {
-			// dump request. Use some dummy HTTP version, since the
+			// dump request.  Use some dummy HTTP version, since the
 			// real one does not seem to be easily available.
 			long ctm = System.currentTimeMillis();
-			rrLogWriter
-					.println(format("%s %s HTTP/0.0 (%tF %tT)", request.getHttpMethod(), request.getUrl(), ctm, ctm));
-			for (Map.Entry<String, String> header : new TreeMap<>(request.getAdditionalHeaders()).entrySet())
+			rrLogWriter.println(format("%s %s HTTP/0.0 (%tF %tT)",
+																 request.getHttpMethod(),
+																 request.getUrl(),
+																 ctm, ctm));
+			for (Map.Entry<String, String> header :
+						 new TreeMap<>(request.getAdditionalHeaders()).entrySet())
 				rrLogWriter.println(format("%s=%s", header.getKey(), header.getValue()));
 			List<NameValuePair> parameters = request.getRequestParameters();
 			if (parameters.size() > 0)
@@ -259,7 +262,8 @@ public class OraclePatchDownloader {
 				rrLogWriter.println(parameter);
 			rrLogWriter.println();
 			rrLogWriter.flush();
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			warn("Cannot write to request-response log file", e);
 		}
 	}
@@ -268,15 +272,19 @@ public class OraclePatchDownloader {
 		try {
 			// dump response
 			long ctm = System.currentTimeMillis();
-			rrLogWriter.println(format("HTTP/0.0 %03d %s (%tF %tT)", response.getStatusCode(),
-					response.getStatusMessage(), ctm, ctm));
+			rrLogWriter.println(format("HTTP/0.0 %03d %s (%tF %tT)",
+																 response.getStatusCode(),
+																 response.getStatusMessage(),
+																 ctm, ctm));
 			for (NameValuePair header : response.getResponseHeaders())
 				rrLogWriter.println(header);
 			rrLogWriter.println();
-			rrLogWriter.println(format("<content of length %d>", response.getContentLength()));
+			rrLogWriter.println(format("<content of length %d>",
+																 response.getContentLength()));
 			rrLogWriter.println();
 			rrLogWriter.flush();
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			warn("Cannot write to request-response log file", e);
 		}
 	}
@@ -284,29 +292,39 @@ public class OraclePatchDownloader {
 	private static void dumpInternal(Page page, boolean onerror) {
 		try {
 			// determine some human-readable page Id
-			String pageId = (page instanceof HtmlPage) ? ((HtmlPage) page).getTitleText() : page.getUrl().toString();
+			String pageId =
+				(page instanceof HtmlPage) ?
+				((HtmlPage)page).getTitleText() :
+				page.getUrl().toString();
 
 			// ensure page Id consists entirely of sane characters
-			pageId = pageId.toLowerCase().replaceFirst("\\A[^0-9a-z]+", "").replaceFirst("[^0-9a-z]+\\z", "")
-					.replaceAll("[^0-9a-z]+", "-");
+			pageId = pageId.toLowerCase()
+				.replaceFirst("\\A[^0-9a-z]+", "")
+				.replaceFirst("[^0-9a-z]+\\z", "")
+				.replaceAll("[^0-9a-z]+", "-");
 			if (pageId.length() == 0)
 				pageId = String.format("%08x", page.hashCode());
 
 			// determine dump file name
-			String dfn = String.format("%s-%016x-%s.%s", onerror ? "error" : "dump", System.currentTimeMillis(), pageId,
-					(page instanceof SgmlPage) ? "xml" : "txt");
+			String dfn =
+				String.format("%s-%016x-%s.%s",
+											onerror ? "error" : "dump",
+											System.currentTimeMillis(), pageId,
+											(page instanceof SgmlPage) ? "xml" : "txt");
 
 			try (FileWriter dfw = new FileWriter(new File(directory, dfn))) {
 				if (page instanceof SgmlPage)
-					dfw.write(((SgmlPage) page).asXml());
+					dfw.write(((SgmlPage)page).asXml());
 				else if (page instanceof TextPage)
-					dfw.write(((TextPage) page).getContent());
+					dfw.write(((TextPage)page).getContent());
 				else
 					dfw.write(page.toString());
-			} catch (IOException e) {
+			}
+			catch (IOException e) {
 				warn("Cannot write dump file \"%s\"", e, dfn);
 			}
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			warn("Cannot write page dump file", e);
 		}
 	}
@@ -316,19 +334,21 @@ public class OraclePatchDownloader {
 			dumpInternal(page, false);
 	}
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// user input
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	private static String readThing(boolean password, String prompt, Object... args) {
 		Console console = System.console();
 		if (console != null) {
 			if (password) {
 				return new String(console.readPassword(prompt, args));
-			} else {
+			}
+			else {
 				return console.readLine(prompt, args);
 			}
-		} else {
+		}
+		else {
 			try {
 				if (password) {
 					// use System.out here, since the password prompt is
@@ -336,11 +356,13 @@ public class OraclePatchDownloader {
 					System.out.println("No console available, reading password with echo from STDIN");
 				}
 				System.out.print(String.format(prompt, args));
-				String result = (new BufferedReader(new InputStreamReader(System.in))).readLine();
+				String result =
+					(new BufferedReader(new InputStreamReader(System.in))).readLine();
 				if (result == null)
 					throw new RuntimeException("Cannot read line from STDIN (EOF)");
 				return result;
-			} catch (IOException e) {
+			}
+			catch (IOException e) {
 				throw new RuntimeException("Cannot read line from STDIN", e);
 			}
 		}
@@ -354,14 +376,15 @@ public class OraclePatchDownloader {
 		return readThing(true, prompt, args);
 	}
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// auxilliary methods
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	// returns the query URL from the specified patch and the
 	// user-specified query map
 	private static String getQueryUrl(String patch) {
-		StringBuffer url = new StringBuffer("https://updates.oracle.com/Orion/Services/search");
+		StringBuffer url =
+			new StringBuffer("https://updates.oracle.com/Orion/Services/search");
 		url.append("?bug=").append(patch);
 		for (Map.Entry<String, List<String>> query : queryMap.entrySet()) {
 			url.append("&").append(query.getKey()).append("=");
@@ -379,34 +402,42 @@ public class OraclePatchDownloader {
 		return list.length > 0;
 	}
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// download
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	public static void download() throws Exception {
-		ArrayList<String> searchErrorList = new ArrayList<String>();
-
 		List<DownloadFile> downloads = new ArrayList<>();
 
 		// force english content since we identify login progress by
 		// (localized) content
-		BrowserVersion.BrowserVersionBuilder browserVersionBuilder = new BrowserVersion.BrowserVersionBuilder(
-				BrowserVersion.FIREFOX);
-		browserVersionBuilder.setUserAgent(USER_AGENT).setBrowserLanguage("en-US").setAcceptLanguageHeader("en-US");
+		BrowserVersion.BrowserVersionBuilder browserVersionBuilder =
+			new BrowserVersion.BrowserVersionBuilder(BrowserVersion.FIREFOX);
+		browserVersionBuilder
+			.setUserAgent(USER_AGENT)
+			.setBrowserLanguage("en-US")
+			.setAcceptLanguageHeader("en-US");
 
 		// determine request-response log file
 		File rrLogFile;
 		if (debugMode)
-			rrLogFile = new File(directory, String.format("%s-%016x.%s", "reqresp", System.currentTimeMillis(), "log"));
+			rrLogFile = new File(directory,
+													 String.format("%s-%016x.%s",
+																				 "reqresp",
+																				 System.currentTimeMillis(),
+																				 "log"));
 		else
 			rrLogFile = null;
 
 		try (WebClient webClient = new WebClient(browserVersionBuilder.build());
-				PrintWriter rrLogWriter = debugMode ? new PrintWriter(new FileWriter(rrLogFile)) : null) {
+				 PrintWriter rrLogWriter =
+					 debugMode ?
+					 new PrintWriter(new FileWriter(rrLogFile)) :
+					 null) {
 			webClient.getOptions().setJavaScriptEnabled(true);
 			webClient.getOptions().setTempFileDirectory(tempdir);
 
-			// unconditionally use basic authentication. See issue
+			// unconditionally use basic authentication.  See issue
 			// #12.
 			DefaultCredentialsProvider creds = new DefaultCredentialsProvider();
 			creds.addCredentials(user, password.toCharArray());
@@ -429,15 +460,17 @@ public class OraclePatchDownloader {
 			Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
 			// some OAM villains try to set invalid cookies - silence
 			// the corresponding org.apache.http.client warnings
-			Logger.getLogger("org.apache.http.client.protocol.ResponseProcessCookies").setLevel(Level.SEVERE);
+			Logger.getLogger("org.apache.http.client.protocol.ResponseProcessCookies")
+				.setLevel(Level.SEVERE);
 
 			// prepare for parsing and processing XML
-			DocumentBuilder xmlparser = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+			DocumentBuilder xmlparser =
+				DocumentBuilderFactory.newInstance().newDocumentBuilder();
 			XPath xpath = XPathFactory.newInstance().newXPath();
-			XPathExpression errorXPE = xpath.compile(RESULT_ERROR_XPE);
+			XPathExpression errorXPE  = xpath.compile(RESULT_ERROR_XPE);
 			XPathExpression dlfileXPE = xpath.compile(DOWNLOAD_FILE_XPE);
 
-			// maintain both abstract and HTML pages in sync. Why?
+			// maintain both abstract and HTML pages in sync.  Why?
 			//
 			// Because ultimately we want to fetch XML content provided
 			// by MOS, which is protected by Oracle's login sqeuence.
@@ -449,13 +482,13 @@ public class OraclePatchDownloader {
 			// Therefore we handle the separate steps of the login
 			// sequence with the following pattern:
 			//
-			// if (page instanceof HtmlPage &&
-			// (hpage = (HtmlPage)page) != null &&
-			// <tests on hpage>) {
-			// [...]
-			// page = <operate on hpage>;
-			// dump(page);
-			// }
+			//   if (page instanceof HtmlPage &&
+			//       (hpage = (HtmlPage)page) != null &&
+			//       <tests on hpage>) {
+			//     [...]
+			//     page = <operate on hpage>;
+			//     dump(page);
+			//   }
 			Page page = null;
 			HtmlPage hpage = null;
 
@@ -468,19 +501,20 @@ public class OraclePatchDownloader {
 				// A short overview on how HtmlUnit methods react when
 				// some element is absent:
 				//
-				// DomElement.getAttribute: returns ATTRIBUTE_NOT_DEFINED
-				// DomNode.getByXPath: returns empty list
-				// DomNode.getFirstByXPath: returns null
-				// DomNode.querySelector: returns null
-				// HtmlPage.getElementById: returns null
-				// HtmlPage.getElementsById: returns empty list
-				// HtmlPage.getFormByName: throws ENFE
+				// DomElement.getAttribute:     returns ATTRIBUTE_NOT_DEFINED
+				// DomNode.getByXPath:          returns empty list
+				// DomNode.getFirstByXPath:     returns null
+				// DomNode.querySelector:       returns null
+				// HtmlPage.getElementById:     returns null
+				// HtmlPage.getElementsById:    returns empty list
+				// HtmlPage.getFormByName:      throws ENFE
 				// HtmlPage.getHtmlElementById: throws ENFE
-				// HtmlForm.getInputByName: throws ENFE
-				// HtmlForm.getInputByValue: throws ENFE
+				// HtmlForm.getInputByName:     throws ENFE
+				// HtmlForm.getInputByValue:    throws ENFE
 
-				if (page instanceof HtmlPage && (hpage = (HtmlPage) page) != null
-						&& hpage.getTitleText().equals("Oracle Login - Single Sign On")) {
+				if (page instanceof HtmlPage &&
+						(hpage = (HtmlPage)page) != null &&
+						hpage.getTitleText().equals("Oracle Login - Single Sign On")) {
 					progress("Processing login page...");
 					try {
 						HtmlForm form = hpage.getFormByName("LoginForm");
@@ -488,63 +522,76 @@ public class OraclePatchDownloader {
 						form.getInputByName("password").type(password);
 						page = hpage.getHtmlElementById("signin_button").click();
 						dump(page);
-					} catch (ElementNotFoundException e) {
+					}
+					catch (ElementNotFoundException e) {
 						error("Cannot process login page", e, page);
 					}
 				}
 
-				if (page instanceof HtmlPage && (hpage = (HtmlPage) page) != null
-						&& hpage.getTitleText().equals("Login - Oracle Access Management 11g")
-						&& hpage.getElementById("loginForm") != null && hpage.getElementById("loginForm")
-								.asNormalizedText().indexOf("Please choose your preferred method") >= 0) {
+				if (page instanceof HtmlPage &&
+						(hpage = (HtmlPage)page) != null &&
+						hpage.getTitleText().equals("Login - Oracle Access Management 11g") &&
+						hpage.getElementById("loginForm") != null &&
+						hpage.getElementById("loginForm").asNormalizedText()
+								 .indexOf("Please choose your preferred method") >= 0) {
 					progress("Processing 2FA selection page...");
 					try {
 						HtmlForm form = hpage.getFormByName("loginForm");
 						if (secondFAType.equals(SecondFAType.Default)) {
-							// determine the default 2FA method. To avoid an
+							// determine the default 2FA method.  To avoid an
 							// exception when one of the methods is not
 							// available, protect the calls to ENFE-throwing
 							// method getInputByValue() by equivalent calls
 							// to method getFirstByXPath().
 							try {
-								if ((form.getFirstByXPath(".//input[@type='radio'][@value='Totp']") != null)
-										&& ((HtmlRadioButtonInput) form.getInputByValue("Totp")).isChecked()) {
+								if ((form.getFirstByXPath(".//input[@type='radio'][@value='Totp']") != null) &&
+										((HtmlRadioButtonInput)form.getInputByValue("Totp")).isChecked()) {
 									secondFAType = SecondFAType.TOTP;
-								} else if ((form.getFirstByXPath(".//input[@type='radio'][@value='Sms']") != null)
-										&& ((HtmlRadioButtonInput) form.getInputByValue("Sms")).isChecked()) {
+								}
+								else if ((form.getFirstByXPath(".//input[@type='radio'][@value='Sms']") != null) &&
+												 ((HtmlRadioButtonInput)form.getInputByValue("Sms")).isChecked()) {
 									secondFAType = SecondFAType.SMS;
-								} else {
+								}
+								else {
 									error("Cannot process 2FA selection page", page);
 								}
-							} catch (ClassCastException e) {
+							}
+							catch (ClassCastException e) {
 								error("Cannot process 2FA selection page", e, page);
 							}
-						} else if (secondFAType.equals(SecondFAType.TOTP)) {
+						}
+						else if (secondFAType.equals(SecondFAType.TOTP)) {
 							form.getInputByValue("Totp").click();
-						} else if (secondFAType.equals(SecondFAType.SMS)) {
+						}
+						else if (secondFAType.equals(SecondFAType.SMS)) {
 							form.getInputByValue("Sms").click();
-						} else {
+						}
+						else {
 							error("Cannot process 2FA selection page", page);
 						}
 						page = form.getInputByValue("OK").click();
 						dump(page);
-					} catch (ElementNotFoundException e) {
+					}
+					catch (ElementNotFoundException e) {
 						error("Cannot process 2FA selection page", e, page);
 					}
 				}
 
-				if (page instanceof HtmlPage && (hpage = (HtmlPage) page) != null
-						&& hpage.getTitleText().equals("Login - Oracle Access Management 11g")
-						&& hpage.querySelector("label[for='username']") != null
-						&& hpage.querySelector("label[for='username']").asNormalizedText()
-								.equals("Enter One Time Pin:")) {
+				if (page instanceof HtmlPage &&
+						(hpage = (HtmlPage)page) != null &&
+						hpage.getTitleText().equals("Login - Oracle Access Management 11g") &&
+						hpage.querySelector("label[for='username']") != null &&
+						hpage.querySelector("label[for='username']").asNormalizedText()
+								 .equals("Enter One Time Pin:")) {
 					progress("Processing 2FA entry page...");
 					String prompt;
 					if (secondFAType.equals(SecondFAType.TOTP)) {
 						prompt = "TOTP: ";
-					} else if (secondFAType.equals(SecondFAType.SMS)) {
+					}
+					else if (secondFAType.equals(SecondFAType.SMS)) {
 						prompt = "SMS PIN: ";
-					} else {
+					}
+					else {
 						prompt = null;
 						error("Cannot process 2FA entry page", page);
 					}
@@ -554,52 +601,57 @@ public class OraclePatchDownloader {
 						form.getInputByName("passcode").type(otp);
 						page = form.getInputByValue("Login").click();
 						dump(page);
-					} catch (ElementNotFoundException e) {
+					}
+					catch (ElementNotFoundException e) {
 						error("Cannot process 2FA entry page", e, page);
 					}
 				}
 
 				// ensure we ended up on the patch search result XML
 				String content;
-				if (page instanceof TextPage && (content = ((TextPage) page).getContent()) != null
-						&& (content.startsWith("<results>") || content.startsWith("<results "))) {
+				if (page instanceof TextPage &&
+						(content = ((TextPage)page).getContent()) != null &&
+						(content.startsWith("<results>") ||
+						 content.startsWith("<results "))) {
 					progress("Processing search results for patch \"%s\"...", patch);
 
-					Document result = xmlparser.parse(new InputSource(new StringReader(content)));
+					Document result =
+						xmlparser.parse(new InputSource(new StringReader(content)));
 
 					// check for search errors
 					Node error;
-					if ((error = (Node) errorXPE.evaluate(result, XPC_NODE)) != null) {
-						warn("Cannot process search error \"%s\"", page,
-								error.getTextContent().trim().replaceAll("\\s+", " "));
-						searchErrorList.add(patch);
-					}
-					NodeList dlfiles = (NodeList) dlfileXPE.evaluate(result, XPC_NODESET);
+					if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null)
+						error("Cannot process search error \"%s\"",
+									page, error.getTextContent().trim().replaceAll("\\s+", " "));
+
+					NodeList dlfiles = (NodeList)dlfileXPE.evaluate(result, XPC_NODESET);
 					for (int i = 0; i < dlfiles.getLength(); i++) {
 						Node dlfile = dlfiles.item(i);
 
 						// extract parts of the download file node
-						String name = (String) xpath.evaluate("./name/text()", dlfile, XPC_STRING);
-						String size = (String) xpath.evaluate("./size/text()", dlfile, XPC_STRING);
-						String host = (String) xpath.evaluate("./download_url/@host", dlfile, XPC_STRING);
-						String path = (String) xpath.evaluate("./download_url/text()", dlfile, XPC_STRING);
-						String sha256 = (String) xpath.evaluate("./digest[@type='SHA-256']/text()", dlfile, XPC_STRING);
+						String name = (String)xpath.evaluate("./name/text()", dlfile, XPC_STRING);
+						String size = (String)xpath.evaluate("./size/text()", dlfile, XPC_STRING);
+						String host = (String)xpath.evaluate("./download_url/@host", dlfile, XPC_STRING);
+						String path = (String)xpath.evaluate("./download_url/text()", dlfile, XPC_STRING);
+						String sha256 =
+							(String)xpath.evaluate("./digest[@type='SHA-256']/text()", dlfile, XPC_STRING);
 
 						// verify them at least to some extent
 						if (name == null || name.length() == 0)
 							error("Cannot process download file name \"%s\"", page, name);
-						if (size == null || !size.matches("\\d+"))
+						if (size == null || ! size.matches("\\d+"))
 							error("Cannot process download file size \"%s\"", page, size);
-						if (host == null || !host.startsWith("https://"))
+						if (host == null || ! host.startsWith("https://"))
 							error("Cannot process download file host \"%s\"", page, host);
 						if (path == null || path.length() == 0)
 							error("Cannot process download file path \"%s\"", page, path);
-						if (sha256 == null || !sha256.matches("\\p{XDigit}{64}"))
+						if (sha256 == null || ! sha256.matches("\\p{XDigit}{64}"))
 							error("Cannot process download file sha256 \"%s\"", page, sha256);
 
 						// create a new download file and check its name
 						// against the user-specified patterns
-						DownloadFile dlf = new DownloadFile(name, Long.parseLong(size), host + path, sha256);
+						DownloadFile dlf =
+						  new DownloadFile(name, Integer.parseInt(size), host + path, sha256 );
 						if (patternList.size() > 0) {
 							for (Pattern pattern : patternList) {
 								if (pattern.matcher(name).matches()) {
@@ -607,13 +659,17 @@ public class OraclePatchDownloader {
 									break;
 								}
 							}
-						} else
+						}
+						else
 							downloads.add(dlf);
 					}
 
 					xmlparser.reset();
-				} else if (page instanceof HtmlPage && (hpage = (HtmlPage) page) != null)
-					error("Cannot process unexpected page \"%s\" - login failed?", hpage, hpage.getTitleText());
+				}
+				else if (page instanceof HtmlPage &&
+								 (hpage = (HtmlPage)page) != null)
+					error("Cannot process unexpected page \"%s\" - login failed?",
+								hpage, hpage.getTitleText());
 				else
 					error("Cannot process unexpected page - login failed?", page);
 			}
@@ -629,10 +685,11 @@ public class OraclePatchDownloader {
 
 				Page p = webClient.getPage(dlf.url);
 				if (p.isHtmlPage())
-					error("Cannot process unexpected page \"%s\"", p, ((HtmlPage) p).getTitleText());
+					error("Cannot process unexpected page \"%s\"",
+								p, ((HtmlPage)p).getTitleText());
 				UnexpectedPage unexpectedPage = (UnexpectedPage) p;
 				try (InputStream inputStream = unexpectedPage.getInputStream();
-						FileOutputStream outputStream = new FileOutputStream(outputFile)) {
+						 FileOutputStream outputStream = new FileOutputStream(outputFile)) {
 					// Save the stream to the file
 					byte[] buffer = new byte[8192];
 					int bytesRead;
@@ -644,26 +701,18 @@ public class OraclePatchDownloader {
 			}
 
 			// dump checksums if non-silent
-			if (!quietMode) {
+			if (! quietMode) {
 				progress("");
 				progress("SHA-256 checksums as provided by MOS:");
 				for (DownloadFile dlf : downloads)
 					result("%s  %s", dlf.sha256, dlf.name);
 			}
-			if (searchErrorList.size() > 0) {
-				String l = "";
-				for (String x : searchErrorList)
-					l = l + " " + x;
-				l = l.trim();
-				l.replace(" ", ",");
-				error("Search error occured for " + l);
-			}
 		}
 	}
 
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 	// main method and friends
-	// -----------------------------------------------------------------
+	//-----------------------------------------------------------------
 
 	private static void help() {
 		System.out.println("Usage:");
@@ -696,22 +745,23 @@ public class OraclePatchDownloader {
 
 		int c;
 		ArrayList<LongOpt> longopts = new ArrayList<>();
-		longopts.add(new LongOpt("help", LongOpt.NO_ARGUMENT, null, 'h'));
-		longopts.add(new LongOpt("debug", LongOpt.NO_ARGUMENT, null, 'D'));
-		longopts.add(new LongOpt("quiet", LongOpt.NO_ARGUMENT, null, 'Q'));
-		longopts.add(new LongOpt("directory", LongOpt.REQUIRED_ARGUMENT, null, 'd'));
-		longopts.add(new LongOpt("patches", LongOpt.REQUIRED_ARGUMENT, null, 'x'));
-		longopts.add(new LongOpt("patchfile", LongOpt.REQUIRED_ARGUMENT, null, 'f'));
-		longopts.add(new LongOpt("query", LongOpt.REQUIRED_ARGUMENT, null, 'q'));
-		longopts.add(new LongOpt("platforms", LongOpt.REQUIRED_ARGUMENT, null, 't'));
-		longopts.add(new LongOpt("regex", LongOpt.REQUIRED_ARGUMENT, null, 'r'));
-		longopts.add(new LongOpt("user", LongOpt.REQUIRED_ARGUMENT, null, 'u'));
-		longopts.add(new LongOpt("password", LongOpt.REQUIRED_ARGUMENT, null, 'p'));
-		longopts.add(new LongOpt("2fatype", LongOpt.REQUIRED_ARGUMENT, null, '2'));
-		longopts.add(new LongOpt("temp", LongOpt.REQUIRED_ARGUMENT, null, 'T'));
+		longopts.add( new LongOpt("help",      LongOpt.NO_ARGUMENT,       null, 'h') );
+		longopts.add( new LongOpt("debug",     LongOpt.NO_ARGUMENT,       null, 'D') );
+		longopts.add( new LongOpt("quiet",     LongOpt.NO_ARGUMENT,       null, 'Q') );
+		longopts.add( new LongOpt("directory", LongOpt.REQUIRED_ARGUMENT, null, 'd') );
+		longopts.add( new LongOpt("patches",   LongOpt.REQUIRED_ARGUMENT, null, 'x') );
+		longopts.add( new LongOpt("patchfile", LongOpt.REQUIRED_ARGUMENT, null, 'f') );
+		longopts.add( new LongOpt("query",     LongOpt.REQUIRED_ARGUMENT, null, 'q') );
+		longopts.add( new LongOpt("platforms", LongOpt.REQUIRED_ARGUMENT, null, 't') );
+		longopts.add( new LongOpt("regex",     LongOpt.REQUIRED_ARGUMENT, null, 'r') );
+		longopts.add( new LongOpt("user",      LongOpt.REQUIRED_ARGUMENT, null, 'u') );
+		longopts.add( new LongOpt("password",  LongOpt.REQUIRED_ARGUMENT, null, 'p') );
+		longopts.add( new LongOpt("2fatype",   LongOpt.REQUIRED_ARGUMENT, null, '2') );
+		longopts.add( new LongOpt("temp",      LongOpt.REQUIRED_ARGUMENT, null, 'T') );
 
-		Getopt g = new Getopt("OraclePatchDownoader", args, "hDQd:x:f:q:t:r:u:p:2:T:",
-				longopts.toArray(new LongOpt[longopts.size()]));
+		Getopt g = new Getopt("OraclePatchDownoader", args,
+													"hDQd:x:f:q:t:r:u:p:2:T:",
+													longopts.toArray(new LongOpt[longopts.size()]));
 		g.setOpterr(false); // do our own error handling
 		directory = new File(System.getProperty("user.home"));
 		tempdir = new File(System.getProperty("java.io.tmpdir"));
@@ -763,10 +813,12 @@ public class OraclePatchDownloader {
 								patchList.add(px);
 							}
 						}
-					} catch (IOException e) {
+					}
+					catch (IOException e) {
 						usage("Invalid file \"%s\" specified (%s)", arg, e.getMessage());
 					}
-				} else {
+				}
+				else {
 					usage("Missing file \"%s\" specified", arg);
 				}
 				break;
@@ -783,7 +835,8 @@ public class OraclePatchDownloader {
 			case 'r':
 				try {
 					patternList.add(Pattern.compile(arg));
-				} catch (PatternSyntaxException e) {
+				}
+				catch (PatternSyntaxException e) {
 					usage("Invalid regexp \"%s\" specified", arg);
 				}
 				break;
@@ -806,7 +859,8 @@ public class OraclePatchDownloader {
 			case '2':
 				try {
 					secondFAType = SecondFAType.valueOf(arg);
-				} catch (IllegalArgumentException e) {
+				}
+				catch (IllegalArgumentException e) {
 					usage("Invalid 2FA type \"%s\"", arg);
 				}
 				break;
@@ -833,23 +887,17 @@ public class OraclePatchDownloader {
 		// verify the user-specified query items and build the query
 		// map from them
 		for (String query : queryList) {
-			if (!query.matches("\\d+[LPR]"))
+			if (! query.matches("\\d+[LPR]"))
 				usage("Invalid platforms or query \"%s\"specified", query);
 
 			// determine query id and term
-			int qlmo = query.length() - 1; // query-lenght-minus-one
+			int qlmo = query.length() - 1;            // query-lenght-minus-one
 			String qid = query.substring(0, qlmo);
-			String qt = null;
+			String qt  = null;
 			switch (query.charAt(qlmo)) {
-			case 'L':
-				qt = "language";
-				break;
-			case 'P':
-				qt = "platform";
-				break;
-			case 'R':
-				qt = "release";
-				break;
+			case 'L': qt = "language"; break;
+			case 'P': qt = "platform"; break;
+			case 'R': qt = "release";  break;
 			}
 
 			// associate query id to query term in the map
@@ -869,15 +917,18 @@ public class OraclePatchDownloader {
 		int exitRc = 0;
 		try {
 			download();
-		} catch (ExitException e) {
+		}
+		catch (ExitException e) {
 			// do not dump the stack trace here - method error()
 			// already has seen to that
 			exitRc = e.exitval;
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			System.err.println("Cannot download patches");
 			e.printStackTrace(System.err);
 			exitRc = 1;
-		} finally {
+		}
+		finally {
 			if (tempdirDelete) {
 				for (File f : tempdir.listFiles()) {
 					f.delete();
