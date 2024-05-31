@@ -17,7 +17,7 @@
 # Oracle Patch Downloader
 
 The Oracle Patch Downloader can be used to download a list of
-patches from My Oracle Support.
+patches from My Oracle Support (MOS).
 
 It is written in Java and based on
 [HtmlUnit](https://www.htmlunit.org/), which has the big
@@ -53,16 +53,20 @@ from its [GitHub release page](https://github.com/ojehle/H35_OraclePatchDownload
 Then start it as
 
 ```
-java -jar OraclePatchDownloader-1.1.0.jar
+java -jar OraclePatchDownloader-1.1.1.jar
 ```
 
 which should bring up the short usage description shown below.
 
-You can use this tool to download a list of patches, the regex
-can be used to filter out files.  You can specify the patch list
-and the platform/language list either as comma-separated lists
-(`-x p12345678,6880880`) or through multiple repeated options
-(`-x p12345678 -x 6880880`) or through a combination of both.
+You can use this tool to download one or more patches from MOS.
+Specify the patch list and other lists on the command line either
+as comma-separated lists (`-x p26749785,6880880`) or through
+multiple repeated options (`-x p26749785 -x 6880880`) or through
+a combination of both.
+
+See [Section Specifying Patch Platforms and Other Selection
+Criteria](#specifying-patch-platforms-and-other-selection-criteria)
+on how to select the patch files to be downloaded.
 
 ```
  -h : --help        help text
@@ -73,18 +77,17 @@ and the platform/language list either as comma-separated lists
 
  -d : --directory   output folder, default user home
 
- -x : --patches     list of patches
-                    (e.g. "p12345678", "12345678")
+ -x : --patches     list of patches (e.g. "26749785,6880880")
 
  -f : --patchfile   file containing list of patches, one patch per line
-                    (e.g. "p12345678", "12345678", "# comment")
+                    (e.g. "p26749785", "26749785", "# comment")
 
  -q : --query |     list of platforms, releases, or languages
  -t : --platforms   (e.g. "226P" for Linux x86-64, "600000000063735R"
-                    for OPatch 12.2.0.1.2, or "4L" for German (D))
+                    for OPatch 12.2.0.1.0, or "4L" for German (D))
 
  -r : --regex       regex for file filter, multiple possible
-                    (e.g. ".*1900.*")
+                    (e.g. "192[23]")
 
       --authmeth    MOS authentication method, one or more of "Basic",
                     "Legacy", or "IDCS", default "Basic,IDCS"
@@ -96,6 +99,14 @@ and the platform/language list either as comma-separated lists
  -T : --temp        temporary directory
 ```
 
+### Example
+
+```sh
+export MOS_PASSWORD="my secret MOS password"
+java -jar oraclePatchDownloader-1.1.1.jar -u user@h35.li -p env:MOS_PASSWORD \
+     -x 26749785 -q 226P -r 1919 -d $HOME/Downloads
+```
+
 ### Specifying Passwords
 
 Specifying passwords on the command line is inherently unsafe, in
@@ -105,15 +116,125 @@ you do not specify option `--password`.
 
 Or you can store the password in an environment variable and pass
 a reference to that variable in the argument to option
-`--password`, as shown in the example below.
+`--password`, as shown in the example above.
 
-### Example
+### Specifying Patch Platforms and Other Selection Criteria
 
-```sh
-export MOS_PASSWORD="my secret MOS password"
-java -jar oraclePatchDownloader-1.1.0.jar -u user@h35.li -p env:MOS_PASSWORD \
-     -x 26749785 -t 226P,4L -r ".*1900.*" -r ".*19190.*" -d $HOME/Downloads
+Disclaimer: This section is written mainly from the perspective
+of a user who downloads *database* patches from MOS.  It is not
+clear how far this section applies to non-database patches as
+well.
+
+You can use the synonymous [command line options `-q` or
+`-t`](#specifying-option--q) to specify selection criteria for
+all patches that you download in one invocation with the Oracle
+Patch Downloader.  At a second stage, you can filter the
+resulting patch files by patch file name with [command line
+option `-r`](#specifying-option--r).
+
+#### Specifying Option `-q`
+
+The arguments to command line option `-q` (or `-t`) are query
+items consisting of a numeric ID and a one-letter query term,
+like this:
+
+|           Query Item |        Query ID | Term  | Purpose            |
+|---------------------:|----------------:|:------|:-------------------|
+|             226**P** |             226 | **P** | select by platform |
+| 600000000063735**R** | 600000000063735 | **R** | select by release  |
+|               4**L** |               4 | **L** | select by language |
+
+To calculate the overall patch selection criterion, all query IDs
+specified per query term are logically ORed, and all different
+query terms are ANDed.  So the following command line options:
+
 ```
+-q 226P,23P -q 600000000063735R -q 0L -q 4L
+```
+
+would select the patch files to process according to the
+following pseudo expression:
+
+```
+(file has platform 226 OR file has platform 23) AND
+(file has release 600000000063735) AND
+(file has language 0 OR file has language 4)
+```
+
+As a special case, you can specify a query item `ALL` to select
+*all* patch files per patch number for processing:
+
+```
+-q ALL
+```
+
+If you specify `-q ALL`, then the downloader ignores all other,
+more specific selection criteria that you also may have specified
+with option `-q`.
+
+#### Specifying Option `-r`
+
+The arguments to command line option `-r` are patch file name
+filters specified as [Java regular expressions][javare].  If you
+do not specify any file name filter, then the Oracle Patch
+downloader processes all patch files previously selected with
+option `-q`.  Otherwise, the downloader processes only those
+patch files where it can find at least one of the filter patterns
+in the file name.
+
+For example, with the following command line options:
+
+```
+-x 26749785 -q ALL -r 1919 -r '192[23]'
+```
+
+the downloader would process the following patch files:
+
+```
+p26749785_1919000DBRU_Generic.zip
+p26749785_191900230418WINDBBP_Generic.zip
+p26749785_1922000DBRU_Generic.zip
+p26749785_192200240116WINDBBP_MSWIN-x86-64.zip
+p26749785_1923000DBRU_Generic.zip
+p26749785_192300240416WINDBBP_MSWIN-x86-64.zip
+```
+
+[javare]: https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
+
+#### Platform IDs for Generic Database Patches
+
+Patch files for generic database patches, like for patch 26749785
+from the example above, are registered on MOS with platform ID
+2000 and in the patch inventory (`inventory.xml`) most often with
+platform ID zero.  As seen in the example, you can select these
+by specifying actually *any* platform ID to option `-q`.
+
+#### Release IDs
+
+Release IDs are not particularly helpful as selection criteria
+for database patches since they tend to be lengthy and since they
+change every quarter for most database patches.  For example,
+release "19.22.0.0.0DBRU" has ID 60000000010115240116212, but
+release "19.23.0.0.0DBRU" has ID 60000000010115240416212.  (Yes,
+there *is* a pattern in these, and if you feel like using it, go
+ahead.)  So to restrict the downloaded patch files to a
+particular version, it is usually easier to use command line
+option `-r` as explained above.
+
+One exception to this "forget-about-the-release-ID" rule is
+probably release ID 600000000063735 for OPatch 12.2.0.1.0, since
+all OPatch 12.2.0.1.0 patch files get released on MOS with that
+release ID.  And all other OPatch patch files labeled "18.\*" or
+"19.\*", at least for patching the database, are just OPatch
+12.2.0.1.0 in disguise.
+
+#### Language IDs
+
+Language IDs are even less helpful as selection criteria for
+database patches since most database patch files are available on
+MOS only with language ID zero.  Accordingly, specifying a
+non-zero language ID for these will most likely produce an empty
+search result.
 
 ### Authentication Methods
 
@@ -173,7 +294,7 @@ following commands:
 git clone git@github.com:ojehle/H35_OraclePatchDownloader.git
 cd H35_OraclePatchDownloader
 mvn package
-java -jar target/oraclePatchDownloader-1.1.0.jar
+java -jar target/oraclePatchDownloader-1.1.1.jar
 ```
 
 The resulting jar is self-contained and does not require any
@@ -236,7 +357,7 @@ Some notes on that:
   settings from `Window` &rarr; `Preferences` can override or
   conflict with the project specific settings.  If in doubt,
   better review your changes in the Git perspective of Eclipse
-  before comitting them.
+  before committing them.
 
 <!--
   == Note: In file `.settings/org.eclipse.jdt.ui.prefs` there are
@@ -266,10 +387,10 @@ Some notes on that:
 
 - The Emacs configuration has been tested on Emacs 28.2.
 
-## Plattform and Language Codes
+## Platform and Language Codes
 
-| Code   | Plattform                                      |
-|--------|------------------------------------------------|
+| Code   | Platform                                       |
+|-------:|:-----------------------------------------------|
 | 537P   | Acme Packet 1100                               |
 | 529P   | Acme Packet 3820                               |
 | 540P   | Acme Packet 3900                               |
@@ -370,7 +491,7 @@ Some notes on that:
 | 282P   | x86 64 bit                                     |
 
 | Code   | Language                                       |
-|--------|------------------------------------------------|
+|-------:|:-----------------------------------------------|
 | 67L    | Albanian (SQ)                                  |
 | 8L     | Arabic (AR)                                    |
 | 26L    | Brazilian Portuguese (PTB)                     |

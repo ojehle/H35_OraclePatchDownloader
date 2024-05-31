@@ -92,7 +92,7 @@ public class OraclePatchDownloader {
 
 	private static enum SecondFAType { Default, TOTP, SMS, None }
 
-	private static class DownloadFile {
+	private static class PatchFile {
 		private final String name;
 
 		@SuppressWarnings("unused")
@@ -102,7 +102,7 @@ public class OraclePatchDownloader {
 
 		private final String sha256;
 
-		private DownloadFile(String name, long size, String url, String sha256) {
+		private PatchFile(String name, long size, String url, String sha256) {
 			this.name = name;
 			this.size = size;
 			this.url = url;
@@ -117,9 +117,9 @@ public class OraclePatchDownloader {
 	private static boolean debugMode = false;
 	private static boolean quietMode = false;
 	private static File directory = null;
-	private static ArrayList<String> patchList = new ArrayList<>();
-	private static HashMap<String, List<String>> queryMap = new HashMap<>();
-	private static ArrayList<Pattern> patternList = new ArrayList<>();
+	private static List<String> patchList = new ArrayList<>();
+	private static Map<String, List<String>> queryMap = new HashMap<>();
+	private static List<Pattern> patternList = new ArrayList<>();
 	private static Set<AuthMeth> authMeths =
 	  new HashSet<>(Arrays.asList(AuthMeth.Basic, AuthMeth.IDCS));
 	private static String user = null;
@@ -159,7 +159,7 @@ public class OraclePatchDownloader {
 	}
 
 	//-----------------------------------------------------------------
-	// errors, warnings, progress
+	// error and output methods
 	//-----------------------------------------------------------------
 
 	// Try to handle errors in this tool as follows:
@@ -170,8 +170,17 @@ public class OraclePatchDownloader {
 	//   called from that;
 	// - Throw a RuntimeException otherwise.
 	//
-	// To report warnings and progress use methods warn() and
-	// progress(), respectively.
+	// Try to handle output in this tool as follows:
+	//
+	// - Avoid using direct references to System.out or System.err;
+	// - Call one of the warn(...) methods for reporting non-fatal
+	//   warnings - these go to System.err;
+	// - Call one of the status(...) methods for reporting status -
+	//   these go to System.err and can be switched off with
+	//   command line option "-Q";
+	// - Call one of the result(...) methods for reporting results
+	//   - these go to System.out and can be switched off with
+	//   command line option "-Q".
 
 	private static class ExitException extends Exception {
 		private final static long serialVersionUID = 1L;
@@ -203,6 +212,7 @@ public class OraclePatchDownloader {
 		error(format, e, (Page)null, args);
 	}
 
+	@SuppressWarnings("unused")
 	private static void error(String format, Object... args)
 	  throws ExitException {
 		error(format, (Exception)null, (Page)null, args);
@@ -216,6 +226,7 @@ public class OraclePatchDownloader {
 			dumpInternal(p, true);
 	}
 
+	@SuppressWarnings("unused")
 	private static void warn(String format, Page p, Object... args) {
 		warn(format, (Exception)null, p, args);
 	}
@@ -228,16 +239,17 @@ public class OraclePatchDownloader {
 		warn(format, (Exception)null, (Page)null, args);
 	}
 
+	@SuppressWarnings("unused")
 	private static void warn() {
 		System.err.println();
 	}
 
-	private static void progress(String format, Object... args) {
+	private static void status(String format, Object... args) {
 		if (! quietMode)
 			System.err.println(format(format, args));
 	}
 
-	private static void progress() {
+	private static void status() {
 		if (! quietMode)
 			System.err.println();
 	}
@@ -245,6 +257,12 @@ public class OraclePatchDownloader {
 	private static void result(String format, Object... args) {
 		if (! quietMode)
 			System.out.println(format(format, args));
+	}
+
+	@SuppressWarnings("unused")
+	private static void result() {
+		if (! quietMode)
+			System.out.println();
 	}
 
 	//-----------------------------------------------------------------
@@ -385,15 +403,15 @@ public class OraclePatchDownloader {
 	// auxilliary methods
 	//-----------------------------------------------------------------
 
-	// returns the query URL from the specified patch and the
-	// user-specified query map
+	// returns the query URL corresponding to the specified patch
+	// and the user-specified query map
 	private static String getQueryUrl(String patch) {
 		StringBuffer url =
 		  new StringBuffer("https://updates.oracle.com/Orion/Services/search");
 		url.append("?bug=").append(patch);
-		for (Map.Entry<String, List<String>> query : queryMap.entrySet()) {
-			url.append("&").append(query.getKey()).append("=");
-			url.append(String.join(",", query.getValue()));
+		for (Map.Entry<String, List<String>> queryItem : queryMap.entrySet()) {
+			url.append("&").append(queryItem.getKey()).append("=");
+			url.append(String.join(",", queryItem.getValue()));
 		}
 		return url.toString();
 	}
@@ -518,7 +536,7 @@ public class OraclePatchDownloader {
 		if (authMeths.contains(AuthMeth.Legacy) &&
 		    testHtmlPage(page,
 		                 hpage -> hpage.getTitleText().equals("Oracle Login - Single Sign On"))) {
-			progress("Processing login page...");
+			status("Processing login page...");
 			try {
 				HtmlPage hpage = (HtmlPage)page;
 				HtmlForm form = hpage.getFormByName("LoginForm");
@@ -536,7 +554,7 @@ public class OraclePatchDownloader {
 			                          && hpage.getElementById("loginForm") != null
 			                          && hpage.getElementById("loginForm").asNormalizedText()
 			                                  .indexOf("Please choose your preferred method") >= 0)) {
-				progress("Processing 2FA selection page...");
+				status("Processing 2FA selection page...");
 				try {
 					HtmlPage hpage = (HtmlPage)page;
 					HtmlForm form = hpage.getFormByName("loginForm");
@@ -585,7 +603,7 @@ public class OraclePatchDownloader {
 			                          && hpage.querySelector("label[for='username']") != null
 			                          && hpage.querySelector("label[for='username']").asNormalizedText()
 			                                  .equals("Enter One Time Pin:"))) {
-				progress("Processing 2FA entry page...");
+				status("Processing 2FA entry page...");
 				String prompt;
 				if (secondFAType.equals(SecondFAType.TOTP)) {
 					prompt = "TOTP: ";
@@ -638,7 +656,7 @@ public class OraclePatchDownloader {
 			  "//input[@id='idcs-signin-basic-signin-form-username']";
 			final String XP_BUTTON_USER =
 			  "//oj-button[@id='idcs-signin-basic-signin-form-submit']";
-			progress("Processing IDCS user page...");
+			status("Processing IDCS user page...");
 			if (testHtmlPage(// @formatter:off
 			                 page,
 			                 hpage -> hpage.getTitleText().equals("Sign in to Oracle")
@@ -660,7 +678,7 @@ public class OraclePatchDownloader {
 			  "//input[@id='idcs-auth-pwd-input|input']";
 			final String XP_BUTTON_PASS =
 			  "//oj-button[@id='idcs-mfa-mfa-auth-user-password-submit-button']";
-			progress("Processing IDCS password page...");
+			status("Processing IDCS password page...");
 			if (testHtmlPage(// @formatter:off
 			                 page,
 			                 hpage -> hpage.getTitleText().equals("Sign in to Oracle")
@@ -691,7 +709,7 @@ public class OraclePatchDownloader {
 			                 hpage -> hpage.getTitleText().equals("Sign in to Oracle")
 			                          && hpage.<DomNode>getFirstByXPath(XP_MFA_APPROVAL) != null,
 			                 40, 500, webClient)) {
-				progress("Processing IDCS MFA page...");
+				status("Processing IDCS MFA page...");
 				tries = 60;
 				waitMillis = 2000;
 			}
@@ -739,20 +757,14 @@ public class OraclePatchDownloader {
 	// authentication method.
 	private final static String BASIC_USER_AGENT = "Wget/1.21.3";
 
-	// short-hands for XPathConstants
+	// short-hands for constants from class XPathConstants
 	private final static QName XPC_STRING = XPathConstants.STRING;
 	private final static QName XPC_NODE = XPathConstants.NODE;
 	private final static QName XPC_NODESET = XPathConstants.NODESET;
 
-	// XPath expression to search for errors
-	private final static String RESULT_ERROR_XPE = "/results/error";
-
-	// XPath expression to search for downloadable files
-	private final static String DOWNLOAD_FILE_XPE = "/results/patch/files/file";
-
 	// ensures that the specified page contains MOS search results,
 	// errors out otherwise
-	private static void assertResultPage(Page page) throws ExitException {
+	private static void assertResultsPage(Page page) throws ExitException {
 		String content;
 		if (page instanceof TextPage &&
 		    (content = ((TextPage)page).getContent()) != null &&
@@ -769,8 +781,20 @@ public class OraclePatchDownloader {
 	}
 
 	public static void download() throws Exception {
-		List<DownloadFile> downloads = new ArrayList<>();
-		List<String> searchErrorList = new ArrayList<>();
+		List<PatchFile> downloads = new ArrayList<>();
+
+		Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
+		// silence org.apache.http.client warnings issued when some
+		// OAM villains try to set invalid cookies
+		if (authMeths.contains(AuthMeth.Legacy))
+			Logger.getLogger("org.apache.http.client.protocol.ResponseProcessCookies")
+			      .setLevel(Level.SEVERE);
+		// suppress logging of JavaScript errors potentially thrown
+		// by the IDCS-based authentication method unless in debug
+		// mode
+		if (authMeths.contains(AuthMeth.IDCS) && ! debugMode)
+			Logger.getLogger("org.htmlunit.javascript.DefaultJavaScriptErrorListener")
+			      .setLevel(Level.OFF);
 
 		// force english content since we identify page elements also
 		// by (localized) content
@@ -819,25 +843,16 @@ public class OraclePatchDownloader {
 				}
 			});
 
-			Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
-			// silence org.apache.http.client warnings issued when some
-			// OAM villains try to set invalid cookies
-			if (authMeths.contains(AuthMeth.Legacy))
-				Logger.getLogger("org.apache.http.client.protocol.ResponseProcessCookies")
-				      .setLevel(Level.SEVERE);
-			// suppress logging of JavaScript errors potentially thrown
-			// by the IDCS-based authentication method unless in debug
-			// mode
-			if (authMeths.contains(AuthMeth.IDCS) && ! debugMode)
-				Logger.getLogger("org.htmlunit.javascript.DefaultJavaScriptErrorListener")
-				      .setLevel(Level.OFF);
-
 			// prepare for parsing and processing XML
+			final String XP_RESULTS_EMPTY = "/results/error/id[text()='10-016']";
+			final String XP_RESULTS_ERROR = "/results/error";
+			final String XP_PATCH_FILES = "/results/patch/files/file";
 			DocumentBuilder xmlparser =
 			  DocumentBuilderFactory.newInstance().newDocumentBuilder();
 			XPath xpath = XPathFactory.newInstance().newXPath();
-			XPathExpression errorXPE = xpath.compile(RESULT_ERROR_XPE);
-			XPathExpression dlfileXPE = xpath.compile(DOWNLOAD_FILE_XPE);
+			XPathExpression xpEmpty = xpath.compile(XP_RESULTS_EMPTY);
+			XPathExpression xpError = xpath.compile(XP_RESULTS_ERROR);
+			XPathExpression xpPFiles = xpath.compile(XP_PATCH_FILES);
 
 			// authenticate to MOS.  Assume that after this call all
 			// following pages fetched from MOS contain actual search
@@ -848,67 +863,70 @@ public class OraclePatchDownloader {
 				if (isPatchDownloaded(patch))
 					continue;
 
-				// fetch the search result page and assert that it
+				// fetch the search results page and assert that it
 				// actually contains search results
 				Page page = webClient.getPage(getQueryUrl(patch));
 				dump(page);
-				assertResultPage(page);
+				assertResultsPage(page);
 
-				progress("Processing search results for patch \"%s\"...", patch);
+				status("Processing search results for patch \"%s\"...", patch);
 
-				Document result =
+				Document results =
 				  xmlparser.parse(new InputSource(new StringReader(((TextPage)page).getContent())));
 
-				// check for search errors.  For now only warn about
-				// them, but throw an error after we have completed (or
-				// not) downloading any remaining patches.
+				// check for empty search results ("10-016: No patches
+				// found.  Clear your search and try again."), then for
+				// other search errors.  Ignore the former, but bail out
+				// for the latter.
 				Node error;
-				if ((error = (Node)errorXPE.evaluate(result, XPC_NODE)) != null) {
-					warn("Cannot process search error \"%s\"",
-					     page, error.getTextContent().trim().replaceAll("\\s+", " "));
-					searchErrorList.add(patch);
-				}
+				if (xpEmpty.evaluate(results, XPC_NODE) != null)
+					;                                     // no-op
+				else if ((error = (Node)xpError.evaluate(results, XPC_NODE)) != null)
+					error("Cannot process search error \"%s\"",
+					      page, error.getTextContent().trim().replaceAll("\\s+", " "));
+				else {
+					NodeList nodes = (NodeList)xpPFiles.evaluate(results, XPC_NODESET);
+					for (int i = 0; i < nodes.getLength(); i++) {
+						Node node = nodes.item(i);
 
-				NodeList dlfiles = (NodeList)dlfileXPE.evaluate(result, XPC_NODESET);
-				for (int i = 0; i < dlfiles.getLength(); i++) {
-					Node dlfile = dlfiles.item(i);
+						// extract parts of the patch file node
+						// @formatter:off
+						String name = (String)xpath.evaluate("./name/text()",         node, XPC_STRING);
+						String size = (String)xpath.evaluate("./size/text()",         node, XPC_STRING);
+						String host = (String)xpath.evaluate("./download_url/@host",  node, XPC_STRING);
+						String path = (String)xpath.evaluate("./download_url/text()", node, XPC_STRING);
+						String sha256 =
+							(String)xpath.evaluate("./digest[@type='SHA-256']/text()",  node, XPC_STRING);
+						// @formatter:on
 
-					// extract parts of the download file node
-					// @formatter:off
-					String name = (String)xpath.evaluate("./name/text()",         dlfile, XPC_STRING);
-					String size = (String)xpath.evaluate("./size/text()",         dlfile, XPC_STRING);
-					String host = (String)xpath.evaluate("./download_url/@host",  dlfile, XPC_STRING);
-					String path = (String)xpath.evaluate("./download_url/text()", dlfile, XPC_STRING);
-					String sha256 =
-					  (String)xpath.evaluate("./digest[@type='SHA-256']/text()",  dlfile, XPC_STRING);
-					// @formatter:on
+						// verify them at least to some extent
+						if (name == null || name.length() == 0)
+							error("Cannot process patch file name \"%s\"", page, name);
+						if (size == null || ! size.matches("\\d+"))
+							error("Cannot process patch file size \"%s\"", page, size);
+						if (host == null || ! host.startsWith("https://"))
+							error("Cannot process patch file host \"%s\"", page, host);
+						if (path == null || path.length() == 0)
+							error("Cannot process patch file path \"%s\"", page, path);
+						if (sha256 == null || ! sha256.matches("\\p{XDigit}{64}"))
+							error("Cannot process patch file sha256 \"%s\"", page, sha256);
 
-					// verify them at least to some extent
-					if (name == null || name.length() == 0)
-						error("Cannot process download file name \"%s\"", page, name);
-					if (size == null || ! size.matches("\\d+"))
-						error("Cannot process download file size \"%s\"", page, size);
-					if (host == null || ! host.startsWith("https://"))
-						error("Cannot process download file host \"%s\"", page, host);
-					if (path == null || path.length() == 0)
-						error("Cannot process download file path \"%s\"", page, path);
-					if (sha256 == null || ! sha256.matches("\\p{XDigit}{64}"))
-						error("Cannot process download file sha256 \"%s\"", page, sha256);
-
-					// create a new download file and check its name
-					// against the user-specified patterns
-					DownloadFile dlf =
-					  new DownloadFile(name, Long.parseLong(size), host + path, sha256);
-					if (patternList.size() > 0) {
-						for (Pattern pattern : patternList) {
-							if (pattern.matcher(name).matches()) {
-								downloads.add(dlf);
-								break;
+						// create a new patch file but add it to the overall
+						// download list only if its name matches one of the
+						// user-specified patterns
+						PatchFile pfile =
+						  new PatchFile(name, Long.parseLong(size), host + path, sha256);
+						if (patternList.size() > 0) {
+							for (Pattern pattern : patternList) {
+								if (pattern.matcher(name).find()) {
+									downloads.add(pfile);
+									break;
+								}
 							}
 						}
+						else
+							downloads.add(pfile);
 					}
-					else
-						downloads.add(dlf);
 				}
 
 				xmlparser.reset();
@@ -916,14 +934,14 @@ public class OraclePatchDownloader {
 
 			// give some feedback if there is nothing to do
 			if (downloads.size() == 0)
-				warn("No new patches selected for download");
+				warn("No new patch files selected for download");
 
-			for (DownloadFile dlf : downloads) {
-				File outputFile = new File(directory, dlf.name);
+			for (PatchFile pfile : downloads) {
+				File outputFile = new File(directory, pfile.name);
 				if (outputFile.exists() && outputFile.length() > 0)
 					continue;
 
-				Page p = webClient.getPage(dlf.url);
+				Page p = webClient.getPage(pfile.url);
 				if (p.isHtmlPage())
 					error("Cannot process unexpected page \"%s\"",
 					      p, ((HtmlPage)p).getTitleText());
@@ -936,27 +954,17 @@ public class OraclePatchDownloader {
 					while ((bytesRead = inputStream.read(buffer)) != -1) {
 						outputStream.write(buffer, 0, bytesRead);
 					}
-					progress("File \"%s\" downloaded successfully.", dlf.name);
+					status("Patch file \"%s\" downloaded successfully.", pfile.name);
 				}
 			}
 
 			// dump checksums if there were any downloads and if we run
 			// non-silent
 			if (downloads.size() > 0 && ! quietMode) {
-				progress();
-				progress("SHA-256 checksums as provided by MOS:");
-				for (DownloadFile dlf : downloads)
-					result("%s  %s", dlf.sha256, dlf.name);
-			}
-
-			// dump information on search errors and error out if there
-			// were any
-			if (searchErrorList.size() > 0) {
-				warn();
-				warn("Search errors occurred for the following patches:");
-				for (String patch : searchErrorList)
-					warn("  %s", patch);
-				error("Cannot process previous search errors");
+				status();
+				status("SHA-256 checksums as provided by MOS:");
+				for (PatchFile pfile : downloads)
+					result("%s  %s", pfile.sha256, pfile.name);
 			}
 		}
 	}
@@ -980,15 +988,14 @@ public class OraclePatchDownloader {
 		System.out.println(" -D : --debug       debug mode");
 		System.out.println(" -Q : --quiet       quiet mode");
 		System.out.println(" -d : --directory   output folder, default user home");
-		System.out.println(" -x : --patches     list of patches");
-		System.out.println("                    (e.g. \"p12345678\", \"12345678\")");
+		System.out.println(" -x : --patches     list of patches (e.g. \"26749785,6880880\")");
 		System.out.println(" -f : --patchfile   file containing list of patches, one patch per line");
-		System.out.println("                    (e.g. \"p12345678\", \"12345678\", \"# comment\")");
+		System.out.println("                    (e.g. \"p26749785\", \"26749785\", \"# comment\")");
 		System.out.println(" -q : --query |     list of platforms, releases, or languages");
 		System.out.println(" -t : --platforms   (e.g. \"226P\" for Linux x86-64, \"600000000063735R\"");
-		System.out.println("                    for OPatch 12.2.0.1.2, or \"4L\" for German (D))");
+		System.out.println("                    for OPatch 12.2.0.1.0, or \"4L\" for German (D))");
 		System.out.println(" -r : --regex       regex for file filter, multiple possible");
-		System.out.println("                    (e.g. \".*1900.*\")");
+		System.out.println("                    (e.g. \"192[23]\")");
 		System.out.println("      --authmeth    MOS authentication method, one or more of \"Basic\",");
 		System.out.println("                    \"Legacy\", or \"IDCS\", default \"Basic,IDCS\"");
 		System.out.println(" -u : --user        email/userid");
@@ -1031,6 +1038,7 @@ public class OraclePatchDownloader {
 		boolean tempdirDelete = false;
 
 		List<String> queryList = new ArrayList<>();
+		boolean queryAll = false;
 		int c;
 		while ((c = g.getopt()) != -1) {
 			String arg = g.getOptarg();
@@ -1089,10 +1097,11 @@ public class OraclePatchDownloader {
 
 			case 'q':
 			case 't':
-				for (String query : arg.split("[,;]+")) {
-					if (query.length() > 0) {
-						queryList.add(query);
-					}
+				for (String queryItem : arg.split("[,;]+")) {
+					if (queryItem.equals("ALL"))
+						queryAll = true;
+					else if (queryItem.length() > 0)
+						queryList.add(queryItem);
 				}
 				break;
 
@@ -1159,28 +1168,32 @@ public class OraclePatchDownloader {
 
 		if (patchList.size() == 0)
 			usage("No patches specified");
-		if (queryList.size() == 0)
+		if (queryList.size() == 0 && ! queryAll)
 			usage("No platforms or query specified");
 
 		// verify the user-specified query items and build the query
-		// map from them
-		for (String query : queryList) {
-			if (! query.matches("\\d+[LPR]"))
-				usage("Invalid platforms or query \"%s\"specified", query);
+		// map from them.  A query item is the generalization of a
+		// traditional platform or language specifier.  It consists
+		// of a numeric query ID ("226") and a trailing one-letter
+		// query term ID ("P"), the latter of which we map to a query
+		// term ("platform").
+		for (String queryItem : queryList) {
+			if (! queryItem.matches("\\d+[LPR]"))
+				usage("Invalid platform or query item \"%s\" specified", queryItem);
 
-			// determine query id and term
-			int qlmo = query.length() - 1;            // query-length-minus-one
-			String qid = query.substring(0, qlmo);
+			// determine query ID and term
+			int qlmo = queryItem.length() - 1;        // query-length-minus-one
+			String qid = queryItem.substring(0, qlmo);
 			String qt = null;
 			// @formatter:off
-			switch (query.charAt(qlmo)) {
+			switch (queryItem.charAt(qlmo)) {
 			case 'L': qt = "language"; break;
 			case 'P': qt = "platform"; break;
 			case 'R': qt = "release";  break;
 			}
 			// @formatter:on
 
-			// associate query id to query term in the map
+			// associate query ID to query term in the map
 			List<String> qids;
 			if (queryMap.containsKey(qt))
 				qids = queryMap.get(qt);
@@ -1188,6 +1201,11 @@ public class OraclePatchDownloader {
 				queryMap.put(qt, qids = new ArrayList<>());
 			qids.add(qid);
 		}
+
+		// override all more specific query items if "-q ALL" is
+		// present
+		if (queryAll)
+			queryMap.clear();
 
 		if (user == null)
 			user = readLine("MOS Username: ");
@@ -1204,7 +1222,7 @@ public class OraclePatchDownloader {
 			exitRc = e.exitval;
 		}
 		catch (Exception e) {
-			System.err.println("Cannot download patches");
+			System.err.println("Cannot download patch files");
 			e.printStackTrace(System.err);
 			exitRc = 1;
 		}
