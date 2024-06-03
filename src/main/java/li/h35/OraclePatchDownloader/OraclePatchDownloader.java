@@ -782,6 +782,7 @@ public class OraclePatchDownloader {
 
 	public static void download() throws Exception {
 		List<PatchFile> downloads = new ArrayList<>();
+		List<String> searchErrors = new ArrayList<>();
 
 		Logger.getLogger("org.htmlunit").setLevel(Level.SEVERE);
 		// silence org.apache.http.client warnings issued when some
@@ -879,12 +880,14 @@ public class OraclePatchDownloader {
 				// other search errors.  Ignore the former, but bail out
 				// for the latter.
 				Node error;
-				if (xpEmpty.evaluate(results, XPC_NODE) != null)
-					;                                     // no-op
-				else if ((error = (Node)xpError.evaluate(results, XPC_NODE)) != null)
-					error("Cannot process search error \"%s\"",
+				if (xpEmpty.evaluate(results, XPC_NODE) != null) {
+					warn("Empty search result for "+patch);
+					searchErrors.add(patch);
+				} else if ((error = (Node)xpError.evaluate(results, XPC_NODE)) != null) {
+					warn("Cannot process search error \"%s\"",
 					      page, error.getTextContent().trim().replaceAll("\\s+", " "));
-				else {
+					searchErrors.add(patch);
+				} else {
 					NodeList nodes = (NodeList)xpPFiles.evaluate(results, XPC_NODESET);
 					for (int i = 0; i < nodes.getLength(); i++) {
 						Node node = nodes.item(i);
@@ -965,6 +968,14 @@ public class OraclePatchDownloader {
 				status("SHA-256 checksums as provided by MOS:");
 				for (PatchFile pfile : downloads)
 					result("%s  %s", pfile.sha256, pfile.name);
+			}
+			if (searchErrors.size() > 0 ) {
+				warn();
+				warn("Search errors occurred for the following patches:");
+				for (String patch : searchErrors)
+					warn("  %s", patch);
+				error("Cannot process previous search errors");
+				
 			}
 		}
 	}
