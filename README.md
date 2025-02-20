@@ -53,7 +53,7 @@ from its [GitHub release page](https://github.com/ojehle/H35_OraclePatchDownload
 Then start it as
 
 ```
-java -jar OraclePatchDownloader-1.1.1.jar
+java -jar OraclePatchDownloader-1.1.2.jar
 ```
 
 which should bring up the short usage description shown below.
@@ -103,7 +103,7 @@ on how to select the patch files to be downloaded.
 
 ```sh
 export MOS_PASSWORD="my secret MOS password"
-java -jar oraclePatchDownloader-1.1.1.jar -u user@h35.li -p env:MOS_PASSWORD \
+java -jar oraclePatchDownloader-1.1.2.jar -u user@h35.li -p env:MOS_PASSWORD \
      -x 26749785 -q 226P -r 1919 -d $HOME/Downloads
 ```
 
@@ -285,6 +285,14 @@ pages and log HTTP requests and responses.  The information
 retrieved through these APIs differs from the actual data sent
 over the wire.
 
+### Proxy
+
+To use a Web Proxy, you can configure the `HTTP_PROXY` environment variable as you do with others tools like curl. 
+
+```sh
+HTTP_PROXY=[http|socks5|socks4]://[user:password@]proxy_host:proxy_port/
+```
+
 ## Installation
 
 To build the Oracle Patch Downloader from its sources execute the
@@ -294,7 +302,7 @@ following commands:
 git clone git@github.com:ojehle/H35_OraclePatchDownloader.git
 cd H35_OraclePatchDownloader
 mvn package
-java -jar target/oraclePatchDownloader-1.1.1.jar
+java -jar target/oraclePatchDownloader-1.1.2.jar
 ```
 
 The resulting jar is self-contained and does not require any

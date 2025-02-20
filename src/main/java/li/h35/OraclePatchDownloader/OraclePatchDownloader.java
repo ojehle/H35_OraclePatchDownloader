@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.StringReader;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -65,6 +66,7 @@ import org.htmlunit.DefaultCredentialsProvider;
 import org.htmlunit.ElementNotFoundException;
 import org.htmlunit.FailingHttpStatusCodeException;
 import org.htmlunit.Page;
+import org.htmlunit.ProxyConfig;
 import org.htmlunit.SgmlPage;
 import org.htmlunit.TextPage;
 import org.htmlunit.UnexpectedPage;
@@ -131,6 +133,10 @@ public class OraclePatchDownloader {
 	private static SecondFAType secondFAType = SecondFAType.Default;
 	private static File tempdir = null;
 
+	private static ProxyConfig proxyConfig = null;
+	private static String proxyUser = null;
+	private static String proxyPassword = null;
+
 	//-----------------------------------------------------------------
 	// string formatting
 	//-----------------------------------------------------------------
@@ -190,6 +196,7 @@ public class OraclePatchDownloader {
 		public ExitException(int exitval) {
 			this.exitval = exitval;
 		}
+
 	}
 
 	private static void error(String format, Exception e, Page p, Object... args)
@@ -497,9 +504,8 @@ public class OraclePatchDownloader {
 		// previous credentials provider first to reset it later
 		CredentialsProvider pcp = webClient.getCredentialsProvider();
 		if (authMeths.contains(AuthMeth.Basic)) {
-			DefaultCredentialsProvider cp = new DefaultCredentialsProvider();
+			DefaultCredentialsProvider cp = (DefaultCredentialsProvider)pcp;
 			cp.addCredentials(user, password.toCharArray());
-			webClient.setCredentialsProvider(cp);
 		}
 
 		Page page = null;
@@ -830,6 +836,25 @@ public class OraclePatchDownloader {
 			// rethrown.  Regardless of this setting, actually.
 			webClient.getOptions().setThrowExceptionOnScriptError(false);
 
+			// set proxy with pissible recentials
+			if (proxyConfig != null) {
+				webClient.getOptions().setProxyConfig(proxyConfig);
+				if (proxyUser != null && proxyPassword != null) {
+					DefaultCredentialsProvider proxyCredentials = new DefaultCredentialsProvider();
+					if (proxyConfig.isSocksProxy()) {
+						proxyCredentials.addSocksCredentials(proxyUser, proxyPassword.toCharArray(),
+						                                     proxyConfig.getProxyHost(),
+						                                     proxyConfig.getProxyPort());
+					}
+					else {
+						proxyCredentials.addCredentials(proxyUser, proxyPassword.toCharArray(),
+						                                proxyConfig.getProxyHost(), proxyConfig.getProxyPort(),
+						                                null);
+					}
+					// Set the proxy credentials on the WebClient
+					webClient.setCredentialsProvider(proxyCredentials);
+				}
+			}
 			// set a custom web connection wrapper to be able to log
 			// requests and their responses
 			webClient.setWebConnection(new WebConnectionWrapper(webClient) {
@@ -881,13 +906,15 @@ public class OraclePatchDownloader {
 				// for the latter.
 				Node error;
 				if (xpEmpty.evaluate(results, XPC_NODE) != null) {
-					warn("Empty search result for "+patch);
+					warn("Empty search result for " + patch);
 					searchErrors.add(patch);
-				} else if ((error = (Node)xpError.evaluate(results, XPC_NODE)) != null) {
+				}
+				else if ((error = (Node)xpError.evaluate(results, XPC_NODE)) != null) {
 					warn("Cannot process search error \"%s\"",
-					      page, error.getTextContent().trim().replaceAll("\\s+", " "));
+					     page, error.getTextContent().trim().replaceAll("\\s+", " "));
 					searchErrors.add(patch);
-				} else {
+				}
+				else {
 					NodeList nodes = (NodeList)xpPFiles.evaluate(results, XPC_NODESET);
 					for (int i = 0; i < nodes.getLength(); i++) {
 						Node node = nodes.item(i);
@@ -969,13 +996,13 @@ public class OraclePatchDownloader {
 				for (PatchFile pfile : downloads)
 					result("%s  %s", pfile.sha256, pfile.name);
 			}
-			if (searchErrors.size() > 0 ) {
+			if (searchErrors.size() > 0) {
 				warn();
 				warn("Search errors occurred for the following patches:");
 				for (String patch : searchErrors)
 					warn("  %s", patch);
 				error("Cannot process previous search errors");
-				
+
 			}
 		}
 	}
@@ -1012,12 +1039,46 @@ public class OraclePatchDownloader {
 		System.out.println(" -u : --user        email/userid");
 		System.out.println(" -p : --password    password (\"env:ENV_VAR\" to use password from env)");
 		System.out.println(" -T : --temp        temporary directory");
+		System.out.println(" ");
 	}
 
 	private static void usage(String format, Object... args) {
 		System.err.println(format(format, args));
 		help();
 		System.exit(2);
+	}
+
+	public static void configureProxy() {
+		// Get the HTTP_PROXY environment variable
+		String httpProxy = System.getenv("HTTP_PROXY");
+
+		if (httpProxy == null || httpProxy.isEmpty()) {
+			return;
+		}
+
+		try {
+			// Ensure the proxy string has a valid URI format
+			if (! httpProxy.startsWith("socks://") && ! httpProxy.startsWith("socks5://") &&
+			    ! httpProxy.startsWith("http://") && ! httpProxy.startsWith("https://")) {
+				httpProxy = "http://" + httpProxy; // Default to HTTP if protocol is missing
+			}
+
+			URI proxyUri = new URI(httpProxy);
+			String userInfo = proxyUri.getUserInfo();
+
+			proxyConfig = new ProxyConfig(proxyUri.getHost(), proxyUri.getPort(), proxyUri.getScheme(),
+			                              proxyUri.getScheme().startsWith("socks"));
+
+			// Extract username and password if available
+			if (userInfo != null && userInfo.contains(":")) {
+				String[] credentials = userInfo.split(":", 2);
+				proxyUser = credentials[0];
+				proxyPassword = credentials[1];
+			}
+		}
+		catch (Exception e) {
+			usage("wrong format of http_proxy env variable ", httpProxy);
+		}
 	}
 
 	public static void main(String[] args) {
@@ -1176,6 +1237,7 @@ public class OraclePatchDownloader {
 				break;
 			}
 		}
+		configureProxy();
 
 		if (patchList.size() == 0)
 			usage("No patches specified");
